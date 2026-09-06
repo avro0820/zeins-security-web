@@ -1,14 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Zeins Help Center & Resource Hub</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zeins Help Center &amp; Resource Hub</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <!-- Toast notification system -->
@@ -23,19 +23,19 @@
         </div>
         <div class="brand-text">
           <span class="brand-title">ZEINS</span>
-          <span class="brand-sub">Security & Help Hub</span>
+          <span class="brand-sub">Security &amp; Help Hub</span>
         </div>
       </div>
 
       <nav class="nav-links">
-        <button class="nav-link active" data-view="sectors-view" id="nav-sectors-btn">
+        <button type="button" class="nav-link active" data-view="sectors-view" id="nav-sectors-btn">
           <i class="fa-solid fa-layer-group"></i> Sectors
         </button>
-        <button class="nav-link" data-view="files-view" id="nav-files-btn">
+        <button type="button" class="nav-link" data-view="files-view" id="nav-files-btn">
           <i class="fa-solid fa-cloud-arrow-up"></i> Cloud Files
         </button>
-        <button class="nav-link admin-only hidden" data-view="admin-view" id="nav-admin-btn">
-          <i class="fa-solid fa-user-shield"></i> Admin & Users
+        <button type="button" class="nav-link admin-only hidden" data-view="admin-view" id="nav-admin-btn">
+          <i class="fa-solid fa-user-shield"></i> Admin &amp; Users
         </button>
       </nav>
 
@@ -46,10 +46,10 @@
         </div>
 
         <div id="auth-nav-guest">
-          <button class="btn btn-outline" id="open-login-btn">
+          <button type="button" class="btn btn-outline" id="open-login-btn">
             <i class="fa-solid fa-arrow-right-to-bracket"></i> Login
           </button>
-          <button class="btn btn-primary" id="open-register-btn">
+          <button type="button" class="btn btn-primary" id="open-register-btn">
             <i class="fa-solid fa-user-plus"></i> Sign Up
           </button>
         </div>
@@ -62,7 +62,7 @@
               <span class="role-badge" id="nav-user-role">User</span>
             </div>
           </div>
-          <button class="btn btn-icon" id="logout-btn" title="Logout">
+          <button type="button" class="btn btn-icon" id="logout-btn" title="Logout" aria-label="Logout">
             <i class="fa-solid fa-power-off"></i>
           </button>
         </div>
@@ -78,15 +78,15 @@
         <div class="hero-badge">
           <i class="fa-solid fa-lock"></i> Protected Resource Management System
         </div>
-        <h1 class="hero-title">Centralized Knowledge & Resource Center</h1>
+        <h1 class="hero-title">Centralized Knowledge &amp; Resource Center</h1>
         <p class="hero-desc">
-          Secure, role-based distribution of tools, APKs, tutorial guides, and documentation. Powered by Firebase Admin & Cloudinary.
+          Secure, role-based distribution of tools, APKs, tutorial guides, and documentation. Powered by Firebase Admin &amp; Cloudinary.
         </p>
 
         <div class="hero-search-bar">
           <i class="fa-solid fa-magnifying-glass search-icon"></i>
-          <input type="text" id="global-search" placeholder="Search sectors, guides, templates, or resources..." />
-          <button class="btn btn-primary" id="search-action-btn">Search</button>
+          <input type="text" id="global-search" placeholder="Search sectors, guides, templates, or resources...">
+          <button type="button" class="btn btn-primary" id="search-action-btn">Search</button>
         </div>
       </div>
 
@@ -131,7 +131,7 @@
           <p class="view-subtitle">Select a category below to explore its instructions and files</p>
         </div>
         <div class="view-actions">
-          <button class="btn btn-secondary admin-only hidden" id="add-sector-btn">
+          <button type="button" class="btn btn-secondary admin-only hidden" id="add-sector-btn">
             <i class="fa-solid fa-plus"></i> New Sector
           </button>
         </div>
@@ -149,7 +149,7 @@
     <section id="boxes-view" class="content-view">
       <div class="view-header">
         <div class="back-group">
-          <button class="btn btn-outline btn-sm" id="back-to-sectors-btn">
+          <button type="button" class="btn btn-outline btn-sm" id="back-to-sectors-btn">
             <i class="fa-solid fa-arrow-left"></i> Back to Sectors
           </button>
           <div>
@@ -158,7 +158,7 @@
           </div>
         </div>
         <div class="view-actions">
-          <button class="btn btn-primary admin-only hidden" id="add-box-btn">
+          <button type="button" class="btn btn-primary admin-only hidden" id="add-box-btn">
             <i class="fa-solid fa-plus"></i> Add New Box
           </button>
         </div>
@@ -182,10 +182,10 @@
       <div class="admin-only hidden">
         <div class="upload-dropzone" id="upload-dropzone">
           <i class="fa-solid fa-cloud-arrow-up dropzone-icon"></i>
-          <h3>Drag & Drop Files Here</h3>
+          <h3>Drag &amp; Drop Files Here</h3>
           <p>Or click to browse from your computer (Max: 100MB)</p>
-          <input type="file" id="file-input" class="hidden" />
-          <button class="btn btn-primary" id="select-file-btn">
+          <input type="file" id="file-input" class="hidden">
+          <button type="button" class="btn btn-primary" id="select-file-btn">
             <i class="fa-solid fa-folder-open"></i> Select File
           </button>
           <div id="upload-progress-box" class="hidden">
@@ -198,7 +198,7 @@
       </div>
 
       <div class="uploaded-files-section">
-        <h3 class="section-title">Uploaded Media & Downloads</h3>
+        <h3 class="section-title">Uploaded Media &amp; Downloads</h3>
         <div id="files-list-container" class="cards-grid">
           <div class="empty-state">
             <i class="fa-solid fa-cloud"></i>
@@ -212,11 +212,11 @@
     <section id="admin-view" class="content-view">
       <div class="view-header">
         <div>
-          <h2 class="view-title">User & Access Management</h2>
+          <h2 class="view-title">User &amp; Access Management</h2>
           <p class="view-subtitle">Assign sector permissions, promote admins, and monitor activity</p>
         </div>
         <div class="view-actions">
-          <button class="btn btn-outline" id="refresh-users-btn">
+          <button type="button" class="btn btn-outline" id="refresh-users-btn">
             <i class="fa-solid fa-rotate-right"></i> Refresh
           </button>
         </div>
@@ -226,12 +226,12 @@
         <table class="data-table">
           <thead>
             <tr>
-              <th>User</th>
-              <th>Email</th>
-              <th>Role</th>
-              <th>Sector Access</th>
-              <th>Status</th>
-              <th>Actions</th>
+              <th scope="col">User</th>
+              <th scope="col">Email</th>
+              <th scope="col">Role</th>
+              <th scope="col">Sector Access</th>
+              <th scope="col">Status</th>
+              <th scope="col">Actions</th>
             </tr>
           </thead>
           <tbody id="users-table-body">
@@ -247,11 +247,11 @@
   <!-- AUTH MODAL (LOGIN & SIGN UP) -->
   <div class="modal-overlay hidden" id="auth-modal">
     <div class="modal-card">
-      <button class="modal-close-btn" id="close-auth-modal">&times;</button>
+      <button type="button" class="modal-close-btn" id="close-auth-modal" aria-label="Close modal">&times;</button>
 
       <div class="auth-tabs">
-        <button class="auth-tab active" id="tab-login">Login</button>
-        <button class="auth-tab" id="tab-register">Sign Up</button>
+        <button type="button" class="auth-tab active" id="tab-login">Login</button>
+        <button type="button" class="auth-tab" id="tab-register">Sign Up</button>
       </div>
 
       <!-- LOGIN FORM -->
@@ -260,7 +260,7 @@
           <label for="login-email">Email Address</label>
           <div class="input-icon-wrap">
             <i class="fa-solid fa-envelope"></i>
-            <input type="email" id="login-email" placeholder="e.g. av6r01@gmail.com" required />
+            <input type="email" id="login-email" placeholder="e.g. av6r01@gmail.com" required>
           </div>
         </div>
 
@@ -268,7 +268,7 @@
           <label for="login-password">Password</label>
           <div class="input-icon-wrap">
             <i class="fa-solid fa-lock"></i>
-            <input type="password" id="login-password" placeholder="Enter your password" required />
+            <input type="password" id="login-password" autocomplete="current-password" placeholder="Enter your password" required>
           </div>
         </div>
 
@@ -288,7 +288,7 @@
           <label for="reg-name">Full Name</label>
           <div class="input-icon-wrap">
             <i class="fa-solid fa-user"></i>
-            <input type="text" id="reg-name" placeholder="John Doe" required />
+            <input type="text" id="reg-name" placeholder="John Doe" required>
           </div>
         </div>
 
@@ -296,7 +296,7 @@
           <label for="reg-email">Email Address</label>
           <div class="input-icon-wrap">
             <i class="fa-solid fa-envelope"></i>
-            <input type="email" id="reg-email" placeholder="e.g. av6r01@gmail.com" required />
+            <input type="email" id="reg-email" placeholder="e.g. av6r01@gmail.com" required>
           </div>
         </div>
 
@@ -304,18 +304,18 @@
           <label for="reg-password">Password</label>
           <div class="input-icon-wrap">
             <i class="fa-solid fa-lock"></i>
-            <input type="password" id="reg-password" placeholder="Create a password" required />
+            <input type="password" id="reg-password" autocomplete="new-password" placeholder="Create a password" required>
           </div>
         </div>
 
         <div class="form-row">
           <div class="form-group">
             <label for="reg-phone">Phone (Optional)</label>
-            <input type="tel" id="reg-phone" placeholder="+123456789" />
+            <input type="tel" id="reg-phone" placeholder="+123456789">
           </div>
           <div class="form-group">
             <label for="reg-address">Address (Optional)</label>
-            <input type="text" id="reg-address" placeholder="City, Country" />
+            <input type="text" id="reg-address" placeholder="City, Country">
           </div>
         </div>
 
@@ -329,13 +329,13 @@
   <!-- ADD SECTOR MODAL -->
   <div class="modal-overlay hidden" id="sector-modal">
     <div class="modal-card">
-      <button class="modal-close-btn" id="close-sector-modal">&times;</button>
+      <button type="button" class="modal-close-btn" id="close-sector-modal" aria-label="Close modal">&times;</button>
       <h3 class="modal-title">Create New Sector</h3>
 
       <form id="sector-form">
         <div class="form-group">
           <label for="sector-name">Sector Name</label>
-          <input type="text" id="sector-name" placeholder="e.g. Android Security Tools" required />
+          <input type="text" id="sector-name" placeholder="e.g. Android Security Tools" required>
         </div>
 
         <div class="form-group">
@@ -351,13 +351,13 @@
   <!-- ADD BOX MODAL -->
   <div class="modal-overlay hidden" id="box-modal">
     <div class="modal-card modal-lg">
-      <button class="modal-close-btn" id="close-box-modal">&times;</button>
+      <button type="button" class="modal-close-btn" id="close-box-modal" aria-label="Close modal">&times;</button>
       <h3 class="modal-title">Create New Resource Box</h3>
 
       <form id="box-form">
         <div class="form-group">
           <label for="box-title">Box Title</label>
-          <input type="text" id="box-title" placeholder="e.g. Master Setup Guide & Config" required />
+          <input type="text" id="box-title" placeholder="e.g. Master Setup Guide & Config" required>
         </div>
 
         <div class="form-group">
@@ -373,17 +373,17 @@
         <div class="form-row">
           <div class="form-group">
             <label for="box-resource-url">Resource Link (Protected)</label>
-            <input type="url" id="box-resource-url" placeholder="https://..." />
+            <input type="url" id="box-resource-url" placeholder="https://...">
           </div>
           <div class="form-group">
             <label for="box-tutorial-url">Tutorial Video / Doc (Protected)</label>
-            <input type="url" id="box-tutorial-url" placeholder="https://youtube.com/..." />
+            <input type="url" id="box-tutorial-url" placeholder="https://youtube.com/...">
           </div>
         </div>
 
         <div class="form-group">
           <label for="box-tags">Tags (comma separated)</label>
-          <input type="text" id="box-tags" placeholder="tools, security, guide, plp" />
+          <input type="text" id="box-tags" placeholder="tools, security, guide, plp">
         </div>
 
         <button type="submit" class="btn btn-primary btn-block">Create Resource Box</button>
@@ -394,7 +394,7 @@
   <!-- MANAGE USER ACCESS MODAL -->
   <div class="modal-overlay hidden" id="user-access-modal">
     <div class="modal-card">
-      <button class="modal-close-btn" id="close-access-modal">&times;</button>
+      <button type="button" class="modal-close-btn" id="close-access-modal" aria-label="Close modal">&times;</button>
       <h3 class="modal-title">Manage User Permissions</h3>
       <p id="access-modal-user-label" class="modal-subtitle">User: user@example.com</p>
 
@@ -405,7 +405,7 @@
         </div>
       </div>
 
-      <button class="btn btn-primary btn-block" id="save-access-btn">Save Permissions</button>
+      <button type="button" class="btn btn-primary btn-block" id="save-access-btn">Save Permissions</button>
     </div>
   </div>
 
@@ -421,7 +421,7 @@
       </div>
 
       <div class="footer-col">
-        <span class="footer-heading">Support & Owner</span>
+        <span class="footer-heading">Support &amp; Owner</span>
         <p class="footer-contact">
           <i class="fa-solid fa-envelope"></i> <strong>av6r01@gmail.com</strong>
         </p>
