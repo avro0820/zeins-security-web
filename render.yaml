@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: zeins-help-center-backend
+    env: node
+    region: oregon
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: NODE_ENV
+        value: production
+      - key: FRONTEND_URL
+        value: https://ai-studio-applet-webapp-dea0d.web.app
+      - key: JWT_SECRET
+        generateValue: true
+      - key: FIREBASE_STORAGE_BUCKET
+        value: zeins-web-setup.firebasestorage.app
+      - key: FIREBASE_SERVICE_ACCOUNT
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
