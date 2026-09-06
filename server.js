@@ -17,8 +17,6 @@ const app = express();
 const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:3000",
-  "https://ai-studio-applet-webapp-dea0d.web.app",
-  "https://ai-studio-applet-webapp-dea0d.firebaseapp.com",
   "https://zeins-web-setup.web.app",
   "https://zeins-web-setup.firebaseapp.com",
   process.env.FRONTEND_URL,
