@@ -40,9 +40,10 @@
       </nav>
 
       <div class="nav-actions">
-        <div class="api-status-pill" id="api-status">
+        <div class="api-status-pill" id="api-status" title="Click to configure backend URL" style="cursor:pointer;">
           <span class="status-dot"></span>
           <span class="status-label">Checking API...</span>
+          <i class="fa-solid fa-gear" style="font-size:0.7rem; margin-left:4px; opacity:0.7;"></i>
         </div>
 
         <div id="auth-nav-guest">
@@ -406,6 +407,26 @@
       </div>
 
       <button type="button" class="btn btn-primary btn-block" id="save-access-btn">Save Permissions</button>
+    </div>
+  <!-- BACKEND API SETTINGS MODAL -->
+  <div class="modal-overlay hidden" id="api-modal">
+    <div class="modal-card">
+      <button type="button" class="modal-close-btn" id="close-api-modal" aria-label="Close modal">&times;</button>
+      <h3 class="modal-title">Backend API Connection</h3>
+      <p class="modal-subtitle">Connect this frontend to your deployed Render or local server</p>
+
+      <div class="form-group">
+        <label for="api-url-input">Backend Server Base URL</label>
+        <input type="url" id="api-url-input" placeholder="https://your-backend.onrender.com" required>
+        <span style="font-size:0.75rem; color:var(--text-dim); margin-top:4px; display:block;">
+          Default: Current origin or Render backend service
+        </span>
+      </div>
+
+      <div style="display:flex; gap:10px;">
+        <button type="button" class="btn btn-primary btn-block" id="save-api-url-btn">Save &amp; Connect</button>
+        <button type="button" class="btn btn-outline" id="reset-api-url-btn">Reset</button>
+      </div>
     </div>
   </div>
 

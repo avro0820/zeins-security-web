@@ -1,3 +1,14 @@
+// ── Helper: Determine initial API base URL ───────────────────
+function getInitialApiBase() {
+  const saved = localStorage.getItem("zeins_api_base");
+  if (saved) return saved.replace(/\/+$/, "");
+  // If running on Firebase Hosting or external static host, point to Render backend
+  if (window.location.hostname.endsWith(".web.app") || window.location.hostname.endsWith(".firebaseapp.com")) {
+    return "https://zeins-help-center-backend.onrender.com";
+  }
+  return window.location.origin;
+}
+
 // ── App State ─────────────────────────────────────────────
 const state = {
   token: localStorage.getItem("zeins_token") || null,
@@ -6,18 +17,19 @@ const state = {
   currentSector: null,
   boxes: [],
   users: [],
-  apiBase: window.location.origin, // Uses same origin by default (works seamlessly on Render/Vercel/Local)
+  apiBase: getInitialApiBase(),
 };
 
 // ── Toast System ───────────────────────────────────────────
 function showToast(message, type = "info") {
   const container = document.getElementById("toast-container");
+  if (!container) return;
   const toast = document.createElement("div");
   toast.className = `toast ${type}`;
   
-  const icon = type === "success" ? "fa-circle-check text-green"
-             : type === "error" ? "fa-circle-xmark text-danger"
-             : "fa-circle-info text-accent";
+  const icon = type === "success" ? "fa-circle-check"
+             : type === "error" ? "fa-circle-xmark"
+             : "fa-circle-info";
              
   toast.innerHTML = `<i class="fa-solid ${icon}"></i><span>${message}</span>`;
   container.appendChild(toast);
@@ -25,7 +37,7 @@ function showToast(message, type = "info") {
   setTimeout(() => {
     toast.style.opacity = "0";
     setTimeout(() => toast.remove(), 300);
-  }, 4000);
+  }, 4500);
 }
 
 // ── API Helper ─────────────────────────────────────────────
@@ -43,7 +55,17 @@ async function apiRequest(endpoint, options = {}) {
       ...options,
       headers,
     });
-    const data = await res.json();
+    
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (_) {
+      throw new Error(
+        `Backend API returned an invalid response (HTML). Current API URL is "${state.apiBase}". Click the Gear icon (⚙️) in the top bar to set your live Render Backend URL.`
+      );
+    }
+
     if (!res.ok) throw new Error(data.error || "Request failed");
     return data;
   } catch (err) {
@@ -55,9 +77,11 @@ async function apiRequest(endpoint, options = {}) {
 // ── Health / API Status Check ──────────────────────────────
 async function checkApiHealth() {
   const pill = document.getElementById("api-status");
+  if (!pill) return;
   const dot = pill.querySelector(".status-dot");
   const label = pill.querySelector(".status-label");
 
+  label.textContent = "Connecting...";
   try {
     const res = await fetch(`${state.apiBase}/api/health`);
     if (res.ok) {
@@ -68,7 +92,7 @@ async function checkApiHealth() {
     }
   } catch {
     dot.className = "status-dot offline";
-    label.textContent = "API Offline";
+    label.textContent = "API Offline (Click ⚙️)";
   }
 }
 
@@ -79,15 +103,20 @@ function updateAuthUI() {
   const adminLinks = document.querySelectorAll(".admin-only");
 
   if (state.user && state.token) {
-    guestNav.classList.add("hidden");
-    userNav.classList.remove("hidden");
+    guestNav?.classList.add("hidden");
+    userNav?.classList.remove("hidden");
 
-    document.getElementById("nav-user-name").textContent = state.user.name || state.user.email.split("@")[0];
+    const nameEl = document.getElementById("nav-user-name");
+    if (nameEl) nameEl.textContent = state.user.name || state.user.email.split("@")[0];
+    
     const roleBadge = document.getElementById("nav-user-role");
-    roleBadge.textContent = state.user.role;
-    roleBadge.className = `role-badge ${state.user.role}`;
+    if (roleBadge) {
+      roleBadge.textContent = state.user.role;
+      roleBadge.className = `role-badge ${state.user.role}`;
+    }
 
-    document.getElementById("nav-user-avatar").textContent = (state.user.name || state.user.email)[0].toUpperCase();
+    const avatarEl = document.getElementById("nav-user-avatar");
+    if (avatarEl) avatarEl.textContent = (state.user.name || state.user.email)[0].toUpperCase();
 
     const isAdmin = state.user.role === "admin" || state.user.role === "owner";
     adminLinks.forEach((el) => {
@@ -95,8 +124,8 @@ function updateAuthUI() {
       else el.classList.add("hidden");
     });
   } else {
-    guestNav.classList.remove("hidden");
-    userNav.classList.add("hidden");
+    guestNav?.classList.remove("hidden");
+    userNav?.classList.add("hidden");
     adminLinks.forEach((el) => el.classList.add("hidden"));
   }
 }
@@ -107,8 +136,8 @@ function handleLogin(token, user) {
   localStorage.setItem("zeins_token", token);
   localStorage.setItem("zeins_user", JSON.stringify(user));
   updateAuthUI();
-  document.getElementById("auth-modal").classList.add("hidden");
-  showToast(`Welcome back, ${user.name || user.email}!`, "success");
+  document.getElementById("auth-modal")?.classList.add("hidden");
+  showToast(`Welcome, ${user.name || user.email}! (${user.role.toUpperCase()})`, "success");
   loadDashboardData();
 }
 
@@ -139,18 +168,20 @@ function switchView(viewId) {
 // ── Load Sectors & Dashboard ───────────────────────────────
 async function loadDashboardData() {
   const grid = document.getElementById("sectors-grid");
+  if (!grid) return;
 
   try {
     const data = await apiRequest("/api/sectors");
     state.sectors = data.sectors || [];
 
-    document.getElementById("stat-sectors-count").textContent = state.sectors.length;
+    const countEl = document.getElementById("stat-sectors-count");
+    if (countEl) countEl.textContent = state.sectors.length;
 
     if (state.sectors.length === 0) {
       grid.innerHTML = `
         <div class="empty-state">
           <i class="fa-solid fa-folder-open"></i>
-          <p>No sectors available yet. ${state.user?.role === 'owner' ? 'Click "+ New Sector" to create one!' : 'Log in to view restricted sectors.'}</p>
+          <p>No sectors available yet. ${state.user?.role === 'owner' || state.user?.role === 'admin' ? 'Click "+ New Sector" to create one!' : 'Log in to view restricted sectors.'}</p>
         </div>
       `;
       return;
@@ -169,9 +200,9 @@ async function loadDashboardData() {
           <p class="sector-desc">${escapeHtml(sec.description || 'No description provided.')}</p>
         </div>
         <div class="sector-footer">
-          <span><i class="fa-solid fa-arrow-right"></i> Click to open boxes</span>
+          <span><i class="fa-solid fa-arrow-right"></i> Open resource boxes</span>
           ${state.user?.role === 'owner' || state.user?.role === 'admin' ? `
-            <button class="btn btn-outline btn-sm" onclick="event.stopPropagation(); deleteSector('${sec.id}')">
+            <button type="button" class="btn btn-outline btn-sm" onclick="event.stopPropagation(); deleteSector('${sec.id}')">
               <i class="fa-solid fa-trash text-danger"></i>
             </button>
           ` : ''}
@@ -183,10 +214,15 @@ async function loadDashboardData() {
     grid.innerHTML = `
       <div class="empty-state">
         <i class="fa-solid fa-lock"></i>
-        <p>Please log in to view protected resource sectors.</p>
-        <button class="btn btn-primary btn-sm" style="margin-top:12px;" onclick="document.getElementById('auth-modal').classList.remove('hidden')">
-          Login / Sign Up
-        </button>
+        <p>${escapeHtml(err.message)}</p>
+        <div style="display:flex; justify-content:center; gap:10px; margin-top:14px;">
+          <button type="button" class="btn btn-primary btn-sm" onclick="document.getElementById('auth-modal').classList.remove('hidden')">
+            Login / Sign Up
+          </button>
+          <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('api-modal').classList.remove('hidden')">
+            Configure Backend URL
+          </button>
+        </div>
       </div>
     `;
   }
@@ -195,8 +231,10 @@ async function loadDashboardData() {
   try {
     const statsData = await apiRequest("/api/admin/stats");
     if (statsData?.stats) {
-      document.getElementById("stat-boxes-count").textContent = statsData.stats.totalBoxes || 0;
-      document.getElementById("stat-users-count").textContent = statsData.stats.totalUsers || 0;
+      const boxesEl = document.getElementById("stat-boxes-count");
+      const usersEl = document.getElementById("stat-users-count");
+      if (boxesEl) boxesEl.textContent = statsData.stats.totalBoxes || 0;
+      if (usersEl) usersEl.textContent = statsData.stats.totalUsers || 0;
     }
   } catch (_) {}
 }
@@ -216,6 +254,7 @@ async function openSector(sectorId) {
 
 async function loadBoxes(sectorId) {
   const container = document.getElementById("boxes-grid");
+  if (!container) return;
   container.innerHTML = `<div class="empty-state"><i class="fa-solid fa-spinner fa-spin"></i><p>Loading boxes...</p></div>`;
 
   try {
@@ -226,7 +265,7 @@ async function loadBoxes(sectorId) {
       container.innerHTML = `
         <div class="empty-state">
           <i class="fa-solid fa-box-open"></i>
-          <p>No resource boxes found in this sector. Add one to get started!</p>
+          <p>No resource boxes found in this sector. Click "+ Add New Box" to add one!</p>
         </div>
       `;
       return;
@@ -239,7 +278,7 @@ async function loadBoxes(sectorId) {
             <h3 class="box-title">${escapeHtml(b.title)}</h3>
           </div>
           ${state.user?.role === 'owner' || state.user?.role === 'admin' ? `
-            <button class="btn btn-outline btn-sm" onclick="deleteBox('${b.id}')">
+            <button type="button" class="btn btn-outline btn-sm" onclick="deleteBox('${b.id}')">
               <i class="fa-solid fa-trash text-danger"></i>
             </button>
           ` : ''}
@@ -260,7 +299,7 @@ async function loadBoxes(sectorId) {
 
         ${b.templateText ? `
           <div class="box-template-wrap">
-            <button class="btn btn-secondary btn-sm copy-btn" onclick="copyTemplate(this, \`${escapeJs(b.templateText)}\`)">
+            <button type="button" class="btn btn-secondary btn-sm copy-btn" onclick="copyTemplate(this, \`${escapeJs(b.templateText)}\`)">
               <i class="fa-solid fa-copy"></i> Copy
             </button>
             <pre class="template-code">${escapeHtml(b.templateText)}</pre>
@@ -269,21 +308,21 @@ async function loadBoxes(sectorId) {
 
         <div class="box-actions-row">
           ${b.resourceUrl && b.resourceUrl !== "HIDDEN" ? `
-            <a href="${b.resourceUrl}" target="_blank" class="btn btn-primary btn-sm">
+            <a href="${b.resourceUrl}" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm">
               <i class="fa-solid fa-arrow-up-right-from-square"></i> Open Resource
             </a>
           ` : b.hasResourceUrl ? `
-            <button class="btn btn-primary btn-sm" onclick="unlockResource('${b.id}')">
+            <button type="button" class="btn btn-primary btn-sm" onclick="unlockResource('${b.id}')">
               <i class="fa-solid fa-lock-open"></i> Unlock Resource
             </button>
           ` : ''}
 
           ${b.tutorialUrl && b.tutorialUrl !== "HIDDEN" ? `
-            <a href="${b.tutorialUrl}" target="_blank" class="btn btn-secondary btn-sm">
+            <a href="${b.tutorialUrl}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm">
               <i class="fa-solid fa-video"></i> Tutorial
             </a>
           ` : b.hasTutorialUrl ? `
-            <button class="btn btn-secondary btn-sm" onclick="unlockTutorial('${b.id}')">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="unlockTutorial('${b.id}')">
               <i class="fa-solid fa-video"></i> Unlock Tutorial
             </button>
           ` : ''}
@@ -292,7 +331,7 @@ async function loadBoxes(sectorId) {
     `).join("");
 
   } catch (err) {
-    container.innerHTML = `<div class="empty-state"><p class="text-danger">${err.message}</p></div>`;
+    container.innerHTML = `<div class="empty-state"><p class="text-danger">${escapeHtml(err.message)}</p></div>`;
   }
 }
 
@@ -325,6 +364,7 @@ function copyTemplate(btn, text) {
 // ── Admin: User Management ─────────────────────────────────
 async function loadAdminUsers() {
   const tbody = document.getElementById("users-table-body");
+  if (!tbody) return;
   tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4">Loading users...</td></tr>`;
 
   try {
@@ -350,11 +390,11 @@ async function loadAdminUsers() {
         </td>
         <td>
           <div style="display:flex; gap:6px;">
-            <button class="btn btn-outline btn-sm" onclick="openAccessModal('${u.id}')" title="Permissions">
+            <button type="button" class="btn btn-outline btn-sm" onclick="openAccessModal('${u.id}')" title="Permissions">
               <i class="fa-solid fa-key"></i> Access
             </button>
             ${state.user?.role === "owner" && u.email !== state.user.email ? `
-              <button class="btn btn-outline btn-sm" onclick="toggleUserRole('${u.id}', '${u.role === 'admin' ? 'user' : 'admin'}')">
+              <button type="button" class="btn btn-outline btn-sm" onclick="toggleUserRole('${u.id}', '${u.role === 'admin' ? 'user' : 'admin'}')">
                 ${u.role === 'admin' ? 'Demote' : 'Make Admin'}
               </button>
             ` : ''}
@@ -364,7 +404,7 @@ async function loadAdminUsers() {
     `).join("");
 
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="6" class="text-center text-danger py-4">${err.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" class="text-center text-danger py-4">${escapeHtml(err.message)}</td></tr>`;
   }
 }
 
@@ -391,7 +431,6 @@ async function handleFileUpload(file) {
     progressText.textContent = "Upload complete!";
     showToast(`File "${data.file.name}" uploaded successfully!`, "success");
 
-    // Add to list
     const container = document.getElementById("files-list-container");
     const fileCard = document.createElement("div");
     fileCard.className = "stat-card";
@@ -401,7 +440,7 @@ async function handleFileUpload(file) {
         <span class="stat-value" style="font-size:1rem;">${escapeHtml(data.file.name)}</span>
         <span class="stat-label">${(data.file.size / 1024 / 1024).toFixed(2)} MB • Cloudinary</span>
       </div>
-      <a href="${data.file.url}" target="_blank" class="btn btn-outline btn-sm">
+      <a href="${data.file.url}" target="_blank" rel="noopener noreferrer" class="btn btn-outline btn-sm">
         <i class="fa-solid fa-download"></i>
       </a>
     `;
@@ -416,6 +455,10 @@ async function handleFileUpload(file) {
 
 // ── Event Listeners ─────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", () => {
+  // Sync input value with current apiBase
+  const apiUrlInput = document.getElementById("api-url-input");
+  if (apiUrlInput) apiUrlInput.value = state.apiBase;
+
   checkApiHealth();
   updateAuthUI();
   loadDashboardData();
@@ -429,95 +472,128 @@ document.addEventListener("DOMContentLoaded", () => {
     switchView("sectors-view");
   });
 
+  // API Configuration Modal
+  const apiModal = document.getElementById("api-modal");
+  document.getElementById("api-status")?.addEventListener("click", () => {
+    if (apiUrlInput) apiUrlInput.value = state.apiBase;
+    apiModal?.classList.remove("hidden");
+  });
+  document.getElementById("close-api-modal")?.addEventListener("click", () => {
+    apiModal?.classList.add("hidden");
+  });
+  document.getElementById("save-api-url-btn")?.addEventListener("click", () => {
+    const val = apiUrlInput.value.trim().replace(/\/+$/, "");
+    if (!val) return;
+    state.apiBase = val;
+    localStorage.setItem("zeins_api_base", val);
+    apiModal?.classList.add("hidden");
+    showToast(`Connected to backend: ${val}`, "success");
+    checkApiHealth();
+    loadDashboardData();
+  });
+  document.getElementById("reset-api-url-btn")?.addEventListener("click", () => {
+    localStorage.removeItem("zeins_api_base");
+    state.apiBase = getInitialApiBase();
+    if (apiUrlInput) apiUrlInput.value = state.apiBase;
+    showToast(`Reset backend URL to: ${state.apiBase}`, "info");
+    checkApiHealth();
+    loadDashboardData();
+  });
+
   // Auth Modals
   const authModal = document.getElementById("auth-modal");
   document.getElementById("open-login-btn")?.addEventListener("click", () => {
-    authModal.classList.remove("hidden");
-    document.getElementById("tab-login").click();
+    authModal?.classList.remove("hidden");
+    document.getElementById("tab-login")?.click();
   });
   document.getElementById("open-register-btn")?.addEventListener("click", () => {
-    authModal.classList.remove("hidden");
-    document.getElementById("tab-register").click();
+    authModal?.classList.remove("hidden");
+    document.getElementById("tab-register")?.click();
   });
   document.getElementById("close-auth-modal")?.addEventListener("click", () => {
-    authModal.classList.add("hidden");
+    authModal?.classList.add("hidden");
   });
   document.getElementById("logout-btn")?.addEventListener("click", handleLogout);
 
   // Tab switching
   document.getElementById("tab-login")?.addEventListener("click", () => {
-    document.getElementById("tab-login").classList.add("active");
-    document.getElementById("tab-register").classList.remove("active");
-    document.getElementById("login-form").classList.remove("hidden");
-    document.getElementById("register-form").classList.add("hidden");
+    document.getElementById("tab-login")?.classList.add("active");
+    document.getElementById("tab-register")?.classList.remove("active");
+    document.getElementById("login-form")?.classList.remove("hidden");
+    document.getElementById("register-form")?.classList.add("hidden");
   });
 
   document.getElementById("tab-register")?.addEventListener("click", () => {
-    document.getElementById("tab-register").classList.add("active");
-    document.getElementById("tab-login").classList.remove("active");
-    document.getElementById("register-form").classList.remove("hidden");
-    document.getElementById("login-form").classList.add("hidden");
+    document.getElementById("tab-register")?.classList.add("active");
+    document.getElementById("tab-login")?.classList.remove("active");
+    document.getElementById("register-form")?.classList.remove("hidden");
+    document.getElementById("login-form")?.classList.add("hidden");
   });
 
-  // Login Submit
+  // Login Submit — calls /api/auth/login
   document.getElementById("login-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
     const email = document.getElementById("login-email").value.trim();
     const password = document.getElementById("login-password").value;
+    const btn = document.getElementById("login-submit-btn");
+
+    btn.disabled = true;
+    btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Authenticating...`;
 
     try {
-      // Direct registration/login sync
-      const res = await apiRequest("/api/auth/register", {
+      const res = await apiRequest("/api/auth/login", {
         method: "POST",
-        body: JSON.stringify({
-          uid: "user_" + btoa(email).replace(/[^a-zA-Z0-9]/g, "").slice(0, 20),
-          email,
-          name: email.split("@")[0],
-        }),
+        body: JSON.stringify({ email, password }),
       });
-
-      // Generate local token
-      const token = btoa(JSON.stringify({ uid: res.user.uid, email: res.user.email, role: res.user.role }));
-      handleLogin(token, res.user);
+      handleLogin(res.token, res.user);
     } catch (err) {
       showToast(err.message, "error");
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = `<i class="fa-solid fa-arrow-right-to-bracket"></i> Login Now`;
     }
   });
 
-  // Register Submit
+  // Register Submit — calls /api/auth/register
   document.getElementById("register-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
     const name = document.getElementById("reg-name").value.trim();
     const email = document.getElementById("reg-email").value.trim();
+    const password = document.getElementById("reg-password").value;
     const phone = document.getElementById("reg-phone").value.trim();
     const address = document.getElementById("reg-address").value.trim();
+    const btn = document.getElementById("register-submit-btn");
+
+    btn.disabled = true;
+    btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Registering...`;
 
     try {
       const res = await apiRequest("/api/auth/register", {
         method: "POST",
         body: JSON.stringify({
-          uid: "user_" + btoa(email).replace(/[^a-zA-Z0-9]/g, "").slice(0, 20),
           name,
           email,
+          password,
           phone,
           address,
         }),
       });
-
-      const token = btoa(JSON.stringify({ uid: res.user.uid, email: res.user.email, role: res.user.role }));
-      handleLogin(token, res.user);
+      handleLogin(res.token, res.user);
     } catch (err) {
       showToast(err.message, "error");
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = `<i class="fa-solid fa-user-plus"></i> Create Account`;
     }
   });
 
   // Sector Create Modal
   const sectorModal = document.getElementById("sector-modal");
   document.getElementById("add-sector-btn")?.addEventListener("click", () => {
-    sectorModal.classList.remove("hidden");
+    sectorModal?.classList.remove("hidden");
   });
   document.getElementById("close-sector-modal")?.addEventListener("click", () => {
-    sectorModal.classList.add("hidden");
+    sectorModal?.classList.add("hidden");
   });
   document.getElementById("sector-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -529,7 +605,7 @@ document.addEventListener("DOMContentLoaded", () => {
         method: "POST",
         body: JSON.stringify({ name, description }),
       });
-      sectorModal.classList.add("hidden");
+      sectorModal?.classList.add("hidden");
       showToast("Sector created successfully!", "success");
       loadDashboardData();
     } catch (err) {
@@ -540,10 +616,10 @@ document.addEventListener("DOMContentLoaded", () => {
   // Box Create Modal
   const boxModal = document.getElementById("box-modal");
   document.getElementById("add-box-btn")?.addEventListener("click", () => {
-    boxModal.classList.remove("hidden");
+    boxModal?.classList.remove("hidden");
   });
   document.getElementById("close-box-modal")?.addEventListener("click", () => {
-    boxModal.classList.add("hidden");
+    boxModal?.classList.add("hidden");
   });
   document.getElementById("box-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -570,7 +646,7 @@ document.addEventListener("DOMContentLoaded", () => {
           tags,
         }),
       });
-      boxModal.classList.add("hidden");
+      boxModal?.classList.add("hidden");
       showToast("Box created successfully!", "success");
       loadBoxes(state.currentSector.id);
     } catch (err) {
