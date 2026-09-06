@@ -12,16 +12,16 @@ services:
       - key: NODE_ENV
         value: production
       - key: FRONTEND_URL
-        value: https://ai-studio-applet-webapp-dea0d.web.app
+        value: https://zeins-web-setup.web.app
       - key: JWT_SECRET
         generateValue: true
       - key: FIREBASE_STORAGE_BUCKET
         value: zeins-web-setup.firebasestorage.app
-      - key: FIREBASE_SERVICE_ACCOUNT
-        sync: false
       - key: CLOUDINARY_CLOUD_NAME
-        sync: false
+        value: dneatk4ks
       - key: CLOUDINARY_API_KEY
-        sync: false
+        value: "126185716818649"
       - key: CLOUDINARY_API_SECRET
+        value: cqHijga8P0ZCt4P8nB_L9jGpVPM
+      - key: FIREBASE_SERVICE_ACCOUNT
         sync: false
