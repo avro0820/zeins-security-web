@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Zeins Help Center & Resource Hub</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Toast notification system -->
+  <div id="toast-container"></div>
+
+  <!-- Header / Navigation -->
+  <header class="navbar">
+    <div class="nav-container">
+      <div class="logo-group">
+        <div class="logo-badge">
+          <i class="fa-solid fa-shield-halved"></i>
+        </div>
+        <div class="brand-text">
+          <span class="brand-title">ZEINS</span>
+          <span class="brand-sub">Security & Help Hub</span>
+        </div>
+      </div>
+
+      <nav class="nav-links">
+        <button class="nav-link active" data-view="sectors-view" id="nav-sectors-btn">
+          <i class="fa-solid fa-layer-group"></i> Sectors
+        </button>
+        <button class="nav-link" data-view="files-view" id="nav-files-btn">
+          <i class="fa-solid fa-cloud-arrow-up"></i> Cloud Files
+        </button>
+        <button class="nav-link admin-only hidden" data-view="admin-view" id="nav-admin-btn">
+          <i class="fa-solid fa-user-shield"></i> Admin & Users
+        </button>
+      </nav>
+
+      <div class="nav-actions">
+        <div class="api-status-pill" id="api-status">
+          <span class="status-dot"></span>
+          <span class="status-label">Checking API...</span>
+        </div>
+
+        <div id="auth-nav-guest">
+          <button class="btn btn-outline" id="open-login-btn">
+            <i class="fa-solid fa-arrow-right-to-bracket"></i> Login
+          </button>
+          <button class="btn btn-primary" id="open-register-btn">
+            <i class="fa-solid fa-user-plus"></i> Sign Up
+          </button>
+        </div>
+
+        <div id="auth-nav-user" class="hidden">
+          <div class="user-chip">
+            <div class="user-avatar" id="nav-user-avatar">A</div>
+            <div class="user-meta">
+              <span class="user-name" id="nav-user-name">User</span>
+              <span class="role-badge" id="nav-user-role">User</span>
+            </div>
+          </div>
+          <button class="btn btn-icon" id="logout-btn" title="Logout">
+            <i class="fa-solid fa-power-off"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Wrapper -->
+  <main class="main-container">
+    <!-- HERO / BANNER -->
+    <section class="hero-banner">
+      <div class="hero-content">
+        <div class="hero-badge">
+          <i class="fa-solid fa-lock"></i> Protected Resource Management System
+        </div>
+        <h1 class="hero-title">Centralized Knowledge & Resource Center</h1>
+        <p class="hero-desc">
+          Secure, role-based distribution of tools, APKs, tutorial guides, and documentation. Powered by Firebase Admin & Cloudinary.
+        </p>
+
+        <div class="hero-search-bar">
+          <i class="fa-solid fa-magnifying-glass search-icon"></i>
+          <input type="text" id="global-search" placeholder="Search sectors, guides, templates, or resources..." />
+          <button class="btn btn-primary" id="search-action-btn">Search</button>
+        </div>
+      </div>
+
+      <!-- Quick Metrics Ribbon -->
+      <div class="stats-ribbon">
+        <div class="stat-card">
+          <div class="stat-icon cyan"><i class="fa-solid fa-folder-tree"></i></div>
+          <div class="stat-info">
+            <span class="stat-value" id="stat-sectors-count">-</span>
+            <span class="stat-label">Accessible Sectors</span>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon purple"><i class="fa-solid fa-box-archive"></i></div>
+          <div class="stat-info">
+            <span class="stat-value" id="stat-boxes-count">-</span>
+            <span class="stat-label">Resource Boxes</span>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon green"><i class="fa-solid fa-users"></i></div>
+          <div class="stat-info">
+            <span class="stat-value" id="stat-users-count">-</span>
+            <span class="stat-label">Total Users</span>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon yellow"><i class="fa-solid fa-crown"></i></div>
+          <div class="stat-info">
+            <span class="stat-value" id="stat-owner-name">av6r01</span>
+            <span class="stat-label">System Owner</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 1: SECTORS GRID -->
+    <section id="sectors-view" class="content-view active">
+      <div class="view-header">
+        <div>
+          <h2 class="view-title">Resource Sectors</h2>
+          <p class="view-subtitle">Select a category below to explore its instructions and files</p>
+        </div>
+        <div class="view-actions">
+          <button class="btn btn-secondary admin-only hidden" id="add-sector-btn">
+            <i class="fa-solid fa-plus"></i> New Sector
+          </button>
+        </div>
+      </div>
+
+      <div id="sectors-grid" class="cards-grid">
+        <div class="empty-state">
+          <i class="fa-solid fa-spinner fa-spin"></i>
+          <p>Loading sectors...</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 2: BOXES INSIDE SECTOR -->
+    <section id="boxes-view" class="content-view">
+      <div class="view-header">
+        <div class="back-group">
+          <button class="btn btn-outline btn-sm" id="back-to-sectors-btn">
+            <i class="fa-solid fa-arrow-left"></i> Back to Sectors
+          </button>
+          <div>
+            <h2 class="view-title" id="current-sector-title">Sector Name</h2>
+            <p class="view-subtitle" id="current-sector-desc">Sector description</p>
+          </div>
+        </div>
+        <div class="view-actions">
+          <button class="btn btn-primary admin-only hidden" id="add-box-btn">
+            <i class="fa-solid fa-plus"></i> Add New Box
+          </button>
+        </div>
+      </div>
+
+      <div id="boxes-grid" class="boxes-list">
+        <!-- Loaded dynamically -->
+      </div>
+    </section>
+
+    <!-- VIEW 3: CLOUD FILES (CLOUDINARY) -->
+    <section id="files-view" class="content-view">
+      <div class="view-header">
+        <div>
+          <h2 class="view-title">Cloudinary File Storage Hub</h2>
+          <p class="view-subtitle">Direct multi-format upload (up to 100MB): APKs, PLPs, ZIPs, Docs, Videos</p>
+        </div>
+      </div>
+
+      <!-- Upload Drag & Drop Area -->
+      <div class="admin-only hidden">
+        <div class="upload-dropzone" id="upload-dropzone">
+          <i class="fa-solid fa-cloud-arrow-up dropzone-icon"></i>
+          <h3>Drag & Drop Files Here</h3>
+          <p>Or click to browse from your computer (Max: 100MB)</p>
+          <input type="file" id="file-input" class="hidden" />
+          <button class="btn btn-primary" id="select-file-btn">
+            <i class="fa-solid fa-folder-open"></i> Select File
+          </button>
+          <div id="upload-progress-box" class="hidden">
+            <div class="progress-bar-wrap">
+              <div class="progress-bar-fill" id="progress-bar"></div>
+            </div>
+            <span id="progress-text">Uploading to Cloudinary...</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="uploaded-files-section">
+        <h3 class="section-title">Uploaded Media & Downloads</h3>
+        <div id="files-list-container" class="cards-grid">
+          <div class="empty-state">
+            <i class="fa-solid fa-cloud"></i>
+            <p>Upload files above to distribute them to resource boxes.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 4: ADMIN & USER MANAGEMENT -->
+    <section id="admin-view" class="content-view">
+      <div class="view-header">
+        <div>
+          <h2 class="view-title">User & Access Management</h2>
+          <p class="view-subtitle">Assign sector permissions, promote admins, and monitor activity</p>
+        </div>
+        <div class="view-actions">
+          <button class="btn btn-outline" id="refresh-users-btn">
+            <i class="fa-solid fa-rotate-right"></i> Refresh
+          </button>
+        </div>
+      </div>
+
+      <div class="table-responsive glass-panel">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Email</th>
+              <th>Role</th>
+              <th>Sector Access</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="users-table-body">
+            <tr>
+              <td colspan="6" class="text-center py-4">Loading users...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- AUTH MODAL (LOGIN & SIGN UP) -->
+  <div class="modal-overlay hidden" id="auth-modal">
+    <div class="modal-card">
+      <button class="modal-close-btn" id="close-auth-modal">&times;</button>
+
+      <div class="auth-tabs">
+        <button class="auth-tab active" id="tab-login">Login</button>
+        <button class="auth-tab" id="tab-register">Sign Up</button>
+      </div>
+
+      <!-- LOGIN FORM -->
+      <form id="login-form" class="auth-form">
+        <div class="form-group">
+          <label for="login-email">Email Address</label>
+          <div class="input-icon-wrap">
+            <i class="fa-solid fa-envelope"></i>
+            <input type="email" id="login-email" placeholder="e.g. av6r01@gmail.com" required />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="login-password">Password</label>
+          <div class="input-icon-wrap">
+            <i class="fa-solid fa-lock"></i>
+            <input type="password" id="login-password" placeholder="Enter your password" required />
+          </div>
+        </div>
+
+        <div class="owner-hint-box">
+          <i class="fa-solid fa-crown text-yellow"></i>
+          <span>Owner account: <strong>av6r01@gmail.com</strong> has master privileges.</span>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block" id="login-submit-btn">
+          <i class="fa-solid fa-arrow-right-to-bracket"></i> Login Now
+        </button>
+      </form>
+
+      <!-- REGISTER FORM -->
+      <form id="register-form" class="auth-form hidden">
+        <div class="form-group">
+          <label for="reg-name">Full Name</label>
+          <div class="input-icon-wrap">
+            <i class="fa-solid fa-user"></i>
+            <input type="text" id="reg-name" placeholder="John Doe" required />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="reg-email">Email Address</label>
+          <div class="input-icon-wrap">
+            <i class="fa-solid fa-envelope"></i>
+            <input type="email" id="reg-email" placeholder="e.g. av6r01@gmail.com" required />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="reg-password">Password</label>
+          <div class="input-icon-wrap">
+            <i class="fa-solid fa-lock"></i>
+            <input type="password" id="reg-password" placeholder="Create a password" required />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="reg-phone">Phone (Optional)</label>
+            <input type="tel" id="reg-phone" placeholder="+123456789" />
+          </div>
+          <div class="form-group">
+            <label for="reg-address">Address (Optional)</label>
+            <input type="text" id="reg-address" placeholder="City, Country" />
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block" id="register-submit-btn">
+          <i class="fa-solid fa-user-plus"></i> Create Account
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ADD SECTOR MODAL -->
+  <div class="modal-overlay hidden" id="sector-modal">
+    <div class="modal-card">
+      <button class="modal-close-btn" id="close-sector-modal">&times;</button>
+      <h3 class="modal-title">Create New Sector</h3>
+
+      <form id="sector-form">
+        <div class="form-group">
+          <label for="sector-name">Sector Name</label>
+          <input type="text" id="sector-name" placeholder="e.g. Android Security Tools" required />
+        </div>
+
+        <div class="form-group">
+          <label for="sector-description">Description</label>
+          <textarea id="sector-description" rows="3" placeholder="Briefly explain what is inside this sector..."></textarea>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block">Save Sector</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ADD BOX MODAL -->
+  <div class="modal-overlay hidden" id="box-modal">
+    <div class="modal-card modal-lg">
+      <button class="modal-close-btn" id="close-box-modal">&times;</button>
+      <h3 class="modal-title">Create New Resource Box</h3>
+
+      <form id="box-form">
+        <div class="form-group">
+          <label for="box-title">Box Title</label>
+          <input type="text" id="box-title" placeholder="e.g. Master Setup Guide & Config" required />
+        </div>
+
+        <div class="form-group">
+          <label for="box-instruction">Instructions / Walkthrough</label>
+          <textarea id="box-instruction" rows="3" placeholder="Step-by-step guidance for users..."></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="box-template">Template Text (Copyable with 1-click)</label>
+          <textarea id="box-template" rows="2" placeholder="Code or text snippets users can copy..."></textarea>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="box-resource-url">Resource Link (Protected)</label>
+            <input type="url" id="box-resource-url" placeholder="https://..." />
+          </div>
+          <div class="form-group">
+            <label for="box-tutorial-url">Tutorial Video / Doc (Protected)</label>
+            <input type="url" id="box-tutorial-url" placeholder="https://youtube.com/..." />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="box-tags">Tags (comma separated)</label>
+          <input type="text" id="box-tags" placeholder="tools, security, guide, plp" />
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block">Create Resource Box</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- MANAGE USER ACCESS MODAL -->
+  <div class="modal-overlay hidden" id="user-access-modal">
+    <div class="modal-card">
+      <button class="modal-close-btn" id="close-access-modal">&times;</button>
+      <h3 class="modal-title">Manage User Permissions</h3>
+      <p id="access-modal-user-label" class="modal-subtitle">User: user@example.com</p>
+
+      <div class="form-group">
+        <label>Sector Permissions</label>
+        <div class="checkbox-options" id="sectors-access-checkboxes">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+
+      <button class="btn btn-primary btn-block" id="save-access-btn">Save Permissions</button>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <footer class="footer">
+    <div class="footer-container">
+      <div class="footer-col">
+        <div class="logo-group">
+          <div class="logo-badge"><i class="fa-solid fa-shield-halved"></i></div>
+          <span class="brand-title">ZEINS</span>
+        </div>
+        <p class="footer-text">Secure resource distribution platform.</p>
+      </div>
+
+      <div class="footer-col">
+        <span class="footer-heading">Support & Owner</span>
+        <p class="footer-contact">
+          <i class="fa-solid fa-envelope"></i> <strong>av6r01@gmail.com</strong>
+        </p>
+      </div>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

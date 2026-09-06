@@ -33,6 +33,9 @@ app.use(cors({
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
+// Serve static frontend files
+app.use(express.static(path.join(__dirname, "public")));
+
 // ── Routes ─────────────────────────────────────────────────
 app.use("/api/auth",     authRoutes);
 app.use("/api/users",    userRoutes);
@@ -42,9 +45,14 @@ app.use("/api/admin",    adminRoutes);
 app.use("/api/files",    fileRoutes);
 app.use("/api/settings", settingsRoutes);
 
-// Health check — Render pings "/" to verify the service is up
-app.get("/",           (req, res) => res.json({ status: "ok", app: "Zeins Help Center API" }));
-app.get("/api/health", (req, res) => res.json({ status: "ok", env: process.env.NODE_ENV }));
+// Health check — Render pings "/api/health" to verify the service is up
+app.get("/api/health", (req, res) => res.json({ status: "ok", env: process.env.NODE_ENV, app: "Zeins Help Center" }));
+
+// SPA fallback: any non-API route returns frontend index.html
+app.get("*", (req, res, next) => {
+  if (req.path.startsWith("/api")) return next();
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
 
 // ── Error handler ──────────────────────────────────────────
 app.use((err, req, res, next) => {
