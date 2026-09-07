@@ -17,7 +17,7 @@ cloudinary.config({
 // ── Multer: memory storage (we stream to Cloudinary) ─────
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 100 * 1024 * 1024 }, // 100 MB max per file
+  limits: { fileSize: 150 * 1024 * 1024 }, // 150 MB max per file
   fileFilter: (req, file, cb) => {
     const allowed = [
       ".plp", ".jpg", ".jpeg", ".png", ".gif", ".webp",

@@ -6,8 +6,9 @@ const { verifyToken, requireAdmin } = require("../middleware/auth");
 // GET /api/admin/users — list all users
 router.get("/users", verifyToken, requireAdmin, async (req, res) => {
   try {
-    const snap = await db.collection("users").orderBy("createdAt", "desc").get();
+    const snap = await db.collection("users").get();
     const users = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    users.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
     res.json({ users });
   } catch (err) {
     res.status(500).json({ error: err.message });

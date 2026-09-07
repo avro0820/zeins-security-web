@@ -10,13 +10,18 @@ const boxRoutes      = require("./routes/boxes");
 const adminRoutes    = require("./routes/admin");
 const fileRoutes     = require("./routes/files");
 const settingsRoutes = require("./routes/settings");
+const supportRoutes  = require("./routes/support");
 
 const app = express();
 
 // ── CORS ──────────────────────────────────────────────────
 const allowedOrigins = [
-  "http://localhost:5173",
+  "http://localhost:4000",
   "http://localhost:3000",
+  "http://localhost:5173",
+  "http://127.0.0.1:4000",
+  "http://127.0.0.1:3000",
+  "http://127.0.0.1:5173",
   "https://zeins-web-setup.web.app",
   "https://zeins-web-setup.firebaseapp.com",
   process.env.FRONTEND_URL,
@@ -24,11 +29,34 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) callback(null, true);
-    else callback(new Error(`CORS blocked: ${origin}`));
+    // Requests with no origin (mobile apps, curl, server-to-server)
+    if (!origin) return callback(null, true);
+
+    // Allow all localhost and 127.0.0.1 ports
+    if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+      return callback(null, true);
+    }
+
+    // Allow Firebase Hosting, Render, Vercel, Netlify
+    if (/^https:\/\/([a-z0-9-]+\.)?(web\.app|firebaseapp\.com|onrender\.com|vercel\.app|netlify\.app)$/.test(origin)) {
+      return callback(null, true);
+    }
+
+    // Explicitly allowed origins
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    // Allow origin without blocking
+    return callback(null, true);
   },
   credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
 }));
+
+// Preflight OPTIONS for all routes
+app.options("*", cors());
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
@@ -44,6 +72,7 @@ app.use("/api/boxes",    boxRoutes);
 app.use("/api/admin",    adminRoutes);
 app.use("/api/files",    fileRoutes);
 app.use("/api/settings", settingsRoutes);
+app.use("/api/support",  supportRoutes);
 
 // Health check — Render pings "/api/health" to verify the service is up
 app.get("/api/health", (req, res) => res.json({ status: "ok", env: process.env.NODE_ENV, app: "Zeins Help Center" }));

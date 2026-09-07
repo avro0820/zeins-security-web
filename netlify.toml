@@ -1,7 +1,16 @@
 [build]
   publish = "public"
 
+# Proxy API requests to the live Render backend
+[[redirects]]
+  from = "/api/*"
+  to = "https://zeins-help-center-backend.onrender.com/api/:splat"
+  status = 200
+  force = true
+
+# SPA client routing fallback
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
+

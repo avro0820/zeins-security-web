@@ -13,14 +13,15 @@ router.get("/", verifyToken, async (req, res) => {
     const user = req.user;
     if (user.role !== "admin" && user.role !== "owner") {
       const access = user.accessList || [];
-      if (!access.includes("*") && !access.includes(sectorId)) {
+      const sectorDoc = await db.collection("sectors").doc(sectorId).get();
+      const isPublicSector = sectorDoc.exists && sectorDoc.data().isPublic !== false;
+      if (!isPublicSector && !access.includes("*") && !access.includes(sectorId)) {
         return res.status(403).json({ error: "Access denied to this sector" });
       }
     }
 
     const snap = await db.collection("boxes")
       .where("sectorId", "==", sectorId)
-      .orderBy("order", "asc")
       .get();
 
     const boxes = snap.docs.map((d) => {
@@ -30,15 +31,22 @@ router.get("/", verifyToken, async (req, res) => {
         return {
           id: d.id,
           ...data,
+          webLink: (data.webLink || data.resourceUrl) ? "HIDDEN" : null,
           resourceUrl: data.resourceUrl ? "HIDDEN" : null,
           tutorialUrl: data.tutorialUrl ? "HIDDEN" : null,
-          // Keep a boolean so frontend knows if link exists
-          hasResourceUrl: !!data.resourceUrl,
+          plpFileUrl: data.plpFileUrl ? "HIDDEN" : null,
+          appLink: data.appLink ? "HIDDEN" : null,
+          // Boolean flags so frontend renders clean action buttons
+          hasWebLink: !!(data.webLink || data.resourceUrl),
           hasTutorialUrl: !!data.tutorialUrl,
+          hasPlpFile: !!(data.plpFileUrl || (data.files && data.files.length)),
+          hasAppLink: !!data.appLink,
         };
       }
       return { id: d.id, ...data };
     });
+
+    boxes.sort((a, b) => (a.order || 0) - (b.order || 0));
 
     res.json({ boxes });
   } catch (err) {
@@ -46,46 +54,86 @@ router.get("/", verifyToken, async (req, res) => {
   }
 });
 
-// POST /api/boxes/:boxId/open-resource — returns redirect for hidden URL
-router.post("/:boxId/open-resource", verifyToken, async (req, res) => {
+// Helper to check user access to a box's sector
+async function checkUserBoxAccess(req, boxData) {
+  const user = req.user;
+  if (user.role === "admin" || user.role === "owner") return true;
+
+  const sectorDoc = await db.collection("sectors").doc(boxData.sectorId).get();
+  const isPublicSector = sectorDoc.exists && sectorDoc.data().isPublic !== false;
+  const access = user.accessList || [];
+
+  if (!isPublicSector && !access.includes("*") && !access.includes(boxData.sectorId)) {
+    return false;
+  }
+  return true;
+}
+
+// POST /api/boxes/:boxId/open-resource or open-web — returns redirect for hidden Web Link
+router.post(["/:boxId/open-resource", "/:boxId/open-web"], verifyToken, async (req, res) => {
   try {
     const doc = await db.collection("boxes").doc(req.params.boxId).get();
     if (!doc.exists) return res.status(404).json({ error: "Box not found" });
     const data = doc.data();
 
-    // Check sector access
-    const user = req.user;
-    if (user.role !== "admin" && user.role !== "owner") {
-      const access = user.accessList || [];
-      if (!access.includes("*") && !access.includes(data.sectorId)) {
-        return res.status(403).json({ error: "Access denied" });
-      }
-    }
+    const allowed = await checkUserBoxAccess(req, data);
+    if (!allowed) return res.status(403).json({ error: "Access denied to this sector" });
 
-    if (!data.resourceUrl) return res.status(404).json({ error: "No resource URL" });
-    res.json({ url: data.resourceUrl });
+    const targetUrl = data.webLink || data.resourceUrl;
+    if (!targetUrl) return res.status(404).json({ error: "No web link configured for this box" });
+    res.json({ url: targetUrl });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// POST /api/boxes/:boxId/open-tutorial
+// POST /api/boxes/:boxId/open-tutorial — returns redirect for hidden Video Link
 router.post("/:boxId/open-tutorial", verifyToken, async (req, res) => {
   try {
     const doc = await db.collection("boxes").doc(req.params.boxId).get();
     if (!doc.exists) return res.status(404).json({ error: "Box not found" });
     const data = doc.data();
 
-    const user = req.user;
-    if (user.role !== "admin" && user.role !== "owner") {
-      const access = user.accessList || [];
-      if (!access.includes("*") && !access.includes(data.sectorId)) {
-        return res.status(403).json({ error: "Access denied" });
-      }
-    }
+    const allowed = await checkUserBoxAccess(req, data);
+    if (!allowed) return res.status(403).json({ error: "Access denied to this sector" });
 
-    if (!data.tutorialUrl) return res.status(404).json({ error: "No tutorial URL" });
+    if (!data.tutorialUrl) return res.status(404).json({ error: "No tutorial video URL configured" });
     res.json({ url: data.tutorialUrl });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/boxes/:boxId/open-plp — returns redirect for hidden PLP / File Pack Link
+router.post("/:boxId/open-plp", verifyToken, async (req, res) => {
+  try {
+    const doc = await db.collection("boxes").doc(req.params.boxId).get();
+    if (!doc.exists) return res.status(404).json({ error: "Box not found" });
+    const data = doc.data();
+
+    const allowed = await checkUserBoxAccess(req, data);
+    if (!allowed) return res.status(403).json({ error: "Access denied to this sector" });
+
+    const plpUrl = data.plpFileUrl || (data.files && data.files[0]?.url);
+    if (!plpUrl) return res.status(404).json({ error: "No PLP / file pack attached to this box" });
+    res.json({ url: plpUrl, name: data.plpFileName || "plp-file-package" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/boxes/:boxId/open-app — returns redirect for hidden Workable Companion App Link
+router.post("/:boxId/open-app", verifyToken, async (req, res) => {
+  try {
+    const doc = await db.collection("boxes").doc(req.params.boxId).get();
+    if (!doc.exists) return res.status(404).json({ error: "Box not found" });
+    const data = doc.data();
+
+    const allowed = await checkUserBoxAccess(req, data);
+    if (!allowed) return res.status(403).json({ error: "Access denied to this sector" });
+
+    if (!data.appLink) return res.status(404).json({ error: "No workable companion app configured" });
+    res.json({ url: data.appLink, name: data.appName || "Companion App" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -107,7 +155,10 @@ router.post("/", verifyToken, requireAdmin, async (req, res) => {
   try {
     const {
       sectorId, title, instruction, templateText,
-      resourceUrl, tutorialUrl, tags, files, order
+      webLink, resourceUrl, tutorialUrl,
+      plpFileUrl, plpFileName, plpFileSize,
+      appLink, appName,
+      tags, files, order
     } = req.body;
 
     if (!sectorId || !title) return res.status(400).json({ error: "sectorId and title required" });
@@ -118,20 +169,24 @@ router.post("/", verifyToken, requireAdmin, async (req, res) => {
 
     const snap = await db.collection("boxes")
       .where("sectorId", "==", sectorId)
-      .orderBy("order", "desc")
-      .limit(1)
       .get();
-    const maxOrder = snap.empty ? 0 : snap.docs[0].data().order || 0;
+    const maxOrder = snap.docs.reduce((max, d) => Math.max(max, d.data().order || 0), 0);
 
     const boxData = {
       sectorId,
       title,
       instruction: instruction || "",
       templateText: templateText || "",
-      resourceUrl: resourceUrl || "",
+      webLink: webLink || resourceUrl || "",
+      resourceUrl: resourceUrl || webLink || "",
       tutorialUrl: tutorialUrl || "",
+      plpFileUrl: plpFileUrl || "",
+      plpFileName: plpFileName || "",
+      plpFileSize: plpFileSize || "",
+      appLink: appLink || "",
+      appName: appName || "",
       tags: tags || [],
-      files: files || [], // Array of { name, url, type, size }
+      files: files || [],
       order: order !== undefined ? order : maxOrder + 1,
       isActive: true,
       createdBy: req.user.uid,
@@ -150,14 +205,26 @@ router.post("/", verifyToken, requireAdmin, async (req, res) => {
 router.put("/:boxId", verifyToken, requireAdmin, async (req, res) => {
   try {
     const allowed = [
-      "title", "instruction", "templateText", "resourceUrl",
-      "tutorialUrl", "tags", "files", "isActive", "order"
+      "title", "instruction", "templateText", "webLink", "resourceUrl",
+      "tutorialUrl", "plpFileUrl", "plpFileName", "plpFileSize",
+      "appLink", "appName", "tags", "files", "isActive", "order"
     ];
     const updates = { updatedAt: new Date().toISOString() };
-    allowed.forEach((k) => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
+    allowed.forEach((k) => {
+      if (req.body[k] !== undefined) {
+        updates[k] = req.body[k];
+      }
+    });
+
+    // Synchronize webLink and resourceUrl if either is set
+    if (req.body.webLink !== undefined && req.body.resourceUrl === undefined) {
+      updates.resourceUrl = req.body.webLink;
+    } else if (req.body.resourceUrl !== undefined && req.body.webLink === undefined) {
+      updates.webLink = req.body.resourceUrl;
+    }
 
     await db.collection("boxes").doc(req.params.boxId).update(updates);
-    res.json({ message: "Box updated" });
+    res.json({ message: "Box updated successfully" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

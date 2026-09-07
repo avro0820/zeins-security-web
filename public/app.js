@@ -2,21 +2,48 @@
 function getInitialApiBase() {
   const saved = localStorage.getItem("zeins_api_base");
   if (saved) return saved.replace(/\/+$/, "");
-  // If running on Firebase Hosting or external static host, point to Render backend
-  if (window.location.hostname.endsWith(".web.app") || window.location.hostname.endsWith(".firebaseapp.com")) {
+
+  const host = window.location.hostname;
+  // If running on Firebase Hosting, point to Render backend
+  if (host.endsWith(".web.app") || host.endsWith(".firebaseapp.com")) {
     return "https://zeins-help-center-backend.onrender.com";
   }
+
+  // If running on local dev server on different port than backend (e.g. Vite 5173, live-server 5500, etc.)
+  if ((host === "localhost" || host === "127.0.0.1") && window.location.port !== "4000") {
+    if (window.location.protocol === "file:" || ["5500", "5173", "3000"].includes(window.location.port)) {
+      return "http://localhost:4000";
+    }
+  }
+
+  // For Netlify (*.netlify.app via proxy), Render (*.onrender.com), and Express server:
   return window.location.origin;
+}
+
+// Safe user parsing from localStorage (prevents 'Unexpected token u' error)
+function getInitialUser() {
+  try {
+    const raw = localStorage.getItem("zeins_user");
+    if (!raw || raw === "undefined" || raw === "null") return null;
+    return JSON.parse(raw);
+  } catch (e) {
+    console.warn("Cleared invalid zeins_user in localStorage:", e);
+    localStorage.removeItem("zeins_user");
+    return null;
+  }
 }
 
 // ── App State ─────────────────────────────────────────────
 const state = {
   token: localStorage.getItem("zeins_token") || null,
-  user: JSON.parse(localStorage.getItem("zeins_user") || "null"),
+  user: getInitialUser(),
   sectors: [],
   currentSector: null,
   boxes: [],
   users: [],
+  tickets: [],
+  currentTicketId: null,
+  supportFilter: "all",
   apiBase: getInitialApiBase(),
 };
 
@@ -40,8 +67,8 @@ function showToast(message, type = "info") {
   }, 4500);
 }
 
-// ── API Helper ─────────────────────────────────────────────
-async function apiRequest(endpoint, options = {}) {
+// ── API Helper (with automatic retry for Render free-tier cold starts) ──
+async function apiRequest(endpoint, options = {}, retries = 0) {
   const headers = { ...options.headers };
   if (state.token) {
     headers["Authorization"] = `Bearer ${state.token}`;
@@ -50,8 +77,10 @@ async function apiRequest(endpoint, options = {}) {
     headers["Content-Type"] = "application/json";
   }
 
+  const url = `${state.apiBase}${endpoint}`;
+
   try {
-    const res = await fetch(`${state.apiBase}${endpoint}`, {
+    const res = await fetch(url, {
       ...options,
       headers,
     });
@@ -61,8 +90,16 @@ async function apiRequest(endpoint, options = {}) {
     try {
       data = JSON.parse(text);
     } catch (_) {
+      const isHtml = text.trim().startsWith("<!DOCTYPE") || text.trim().startsWith("<html");
+      // If Render backend is waking up, retry automatically
+      if (isHtml && retries < 2) {
+        showToast("Backend service is waking up (Render free tier). Retrying in 4s...", "info");
+        await new Promise((r) => setTimeout(r, 4000));
+        return apiRequest(endpoint, options, retries + 1);
+      }
+
       throw new Error(
-        `Backend API returned an invalid response (HTML). Current API URL is "${state.apiBase}". Click the Gear icon (⚙️) in the top bar to set your live Render Backend URL.`
+        `Backend API returned an HTML response instead of JSON. Current API base is "${state.apiBase}". Click the Gear icon (⚙️) to configure your live backend URL.`
       );
     }
 
@@ -83,7 +120,11 @@ async function checkApiHealth() {
 
   label.textContent = "Connecting...";
   try {
-    const res = await fetch(`${state.apiBase}/api/health`);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    const res = await fetch(`${state.apiBase}/api/health`, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
     if (res.ok) {
       dot.className = "status-dot online";
       label.textContent = "API Online";
@@ -163,6 +204,7 @@ function switchView(viewId) {
   if (matchingLink) matchingLink.classList.add("active");
 
   if (viewId === "admin-view") loadAdminUsers();
+  if (viewId === "support-view") loadSupportTickets();
 }
 
 // ── Load Sectors & Dashboard ───────────────────────────────
@@ -178,10 +220,16 @@ async function loadDashboardData() {
     if (countEl) countEl.textContent = state.sectors.length;
 
     if (state.sectors.length === 0) {
+      const emptyMsg = (state.user?.role === 'owner' || state.user?.role === 'admin')
+        ? 'No sectors available yet. Click "+ New Sector" to create one!'
+        : state.user
+          ? `Welcome, ${escapeHtml(state.user.name || state.user.email)}! You have access to open resources. Contact av6r01@gmail.com for restricted sector access.`
+          : 'Welcome to ZEINS Help Center! Log in or create an account to view and access resources.';
+
       grid.innerHTML = `
         <div class="empty-state">
           <i class="fa-solid fa-folder-open"></i>
-          <p>No sectors available yet. ${state.user?.role === 'owner' || state.user?.role === 'admin' ? 'Click "+ New Sector" to create one!' : 'Log in to view restricted sectors.'}</p>
+          <p>${emptyMsg}</p>
         </div>
       `;
       return;
@@ -237,6 +285,11 @@ async function loadDashboardData() {
       if (usersEl) usersEl.textContent = statsData.stats.totalUsers || 0;
     }
   } catch (_) {}
+
+  // Check support tickets unread badge
+  if (state.token) {
+    loadSupportUnreadCount();
+  }
 }
 
 // ── Open Sector & View Boxes ───────────────────────────────
@@ -271,16 +324,30 @@ async function loadBoxes(sectorId) {
       return;
     }
 
-    container.innerHTML = state.boxes.map((b) => `
-      <div class="box-card">
+    const isAdmin = state.user?.role === 'owner' || state.user?.role === 'admin';
+
+    container.innerHTML = state.boxes.map((b) => {
+      const hasTemplate = !!b.templateText;
+      const hasWeb = b.hasWebLink || (b.webLink && b.webLink !== "HIDDEN") || (b.resourceUrl && b.resourceUrl !== "HIDDEN");
+      const hasPlp = b.hasPlpFile || (b.plpFileUrl && b.plpFileUrl !== "HIDDEN");
+      const hasVideo = b.hasTutorialUrl || (b.tutorialUrl && b.tutorialUrl !== "HIDDEN");
+      const hasApp = b.hasAppLink || (b.appLink && b.appLink !== "HIDDEN");
+
+      return `
+      <div class="box-card" id="box-card-${b.id}">
         <div class="box-header">
           <div>
             <h3 class="box-title">${escapeHtml(b.title)}</h3>
           </div>
-          ${state.user?.role === 'owner' || state.user?.role === 'admin' ? `
-            <button type="button" class="btn btn-outline btn-sm" onclick="deleteBox('${b.id}')">
-              <i class="fa-solid fa-trash text-danger"></i>
-            </button>
+          ${isAdmin ? `
+            <div class="box-card-actions-header">
+              <button type="button" class="btn btn-outline btn-sm" onclick="openEditBoxModal('${b.id}')" title="Edit Box">
+                <i class="fa-solid fa-pen-to-square"></i> Edit
+              </button>
+              <button type="button" class="btn btn-outline btn-sm" onclick="deleteBox('${b.id}')" title="Delete Box">
+                <i class="fa-solid fa-trash text-danger"></i>
+              </button>
+            </div>
           ` : ''}
         </div>
 
@@ -290,55 +357,91 @@ async function loadBoxes(sectorId) {
           </div>
         ` : ''}
 
+        <!-- 3rd Option: Instructions & Fixed Guide Text -->
         ${b.instruction ? `
           <div class="box-instruction">
-            <strong><i class="fa-solid fa-circle-info"></i> Instructions:</strong><br/>
+            <strong><i class="fa-solid fa-circle-info"></i> Guide &amp; Instructions:</strong><br/>
             ${escapeHtml(b.instruction)}
           </div>
         ` : ''}
 
-        ${b.templateText ? `
+        <!-- 1st Option: 1s Copy Area Text -->
+        ${hasTemplate ? `
           <div class="box-template-wrap">
-            <button type="button" class="btn btn-secondary btn-sm copy-btn" onclick="copyTemplate(this, \`${escapeJs(b.templateText)}\`)">
-              <i class="fa-solid fa-copy"></i> Copy
+            <button type="button" class="btn btn-copy-1s btn-sm copy-btn" onclick="copyTemplate(this, \`${escapeJs(b.templateText)}\`)">
+              <i class="fa-solid fa-copy"></i> 📋 1s Copy Area Text
             </button>
             <pre class="template-code">${escapeHtml(b.templateText)}</pre>
           </div>
         ` : ''}
 
+        <!-- Sector Action Buttons -->
         <div class="box-actions-row">
-          ${b.resourceUrl && b.resourceUrl !== "HIDDEN" ? `
-            <a href="${b.resourceUrl}" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm">
-              <i class="fa-solid fa-arrow-up-right-from-square"></i> Open Resource
-            </a>
-          ` : b.hasResourceUrl ? `
-            <button type="button" class="btn btn-primary btn-sm" onclick="unlockResource('${b.id}')">
-              <i class="fa-solid fa-lock-open"></i> Unlock Resource
+          <!-- 2nd Option: Main Web Link (Direct Login) -->
+          ${hasWeb ? `
+            <button type="button" class="btn btn-direct-web btn-sm" onclick="unlockWebLink('${b.id}')">
+              <i class="fa-solid fa-arrow-up-right-from-square"></i> 🌐 Direct Login / Web Link
             </button>
           ` : ''}
 
-          ${b.tutorialUrl && b.tutorialUrl !== "HIDDEN" ? `
-            <a href="${b.tutorialUrl}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm">
-              <i class="fa-solid fa-video"></i> Tutorial
-            </a>
-          ` : b.hasTutorialUrl ? `
-            <button type="button" class="btn btn-secondary btn-sm" onclick="unlockTutorial('${b.id}')">
-              <i class="fa-solid fa-video"></i> Unlock Tutorial
+          <!-- 4th Option: PLP Files & Folders (100MB - 150MB max) -->
+          ${hasPlp ? `
+            <button type="button" class="btn btn-plp btn-sm" onclick="unlockPlpFile('${b.id}')">
+              <i class="fa-solid fa-folder-arrow-down"></i> 📥 Download PLP / File Pack (Max 150MB)
+            </button>
+          ` : ''}
+
+          <!-- 5th Option: Video Link (Hidden Video Link) -->
+          ${hasVideo ? `
+            <button type="button" class="btn btn-video btn-sm" onclick="unlockTutorial('${b.id}')">
+              <i class="fa-solid fa-video"></i> ▶ Watch Tutorial Video
+            </button>
+          ` : ''}
+
+          <!-- 6th Option: Others Workable App Add System -->
+          ${hasApp ? `
+            <button type="button" class="btn btn-app btn-sm" onclick="unlockApp('${b.id}')">
+              <i class="fa-solid fa-mobile-screen-button"></i> 📱 Open / Get Workable App
             </button>
           ` : ''}
         </div>
       </div>
-    `).join("");
+    `;
+    }).join("");
 
   } catch (err) {
-    container.innerHTML = `<div class="empty-state"><p class="text-danger">${escapeHtml(err.message)}</p></div>`;
+    const isPermissionErr = (err.message || "").toLowerCase().includes("access") || (err.message || "").toLowerCase().includes("forbidden");
+    container.innerHTML = `
+      <div class="empty-state">
+        <i class="fa-solid fa-lock" style="font-size:2.5rem; color:var(--accent); margin-bottom:12px;"></i>
+        <h3 style="color:#fff; margin-bottom:8px;">Restricted Sector</h3>
+        <p class="text-danger" style="margin-bottom:16px;">${escapeHtml(err.message)}</p>
+        ${isPermissionErr ? `
+          <button type="button" class="btn btn-primary" onclick="openCreateSupportModal('${sectorId}')">
+            <i class="fa-solid fa-key"></i> Request Access from Admin / Owner
+          </button>
+        ` : ''}
+      </div>
+    `;
   }
 }
 
-async function unlockResource(boxId) {
+async function unlockWebLink(boxId) {
   try {
-    const data = await apiRequest(`/api/boxes/${boxId}/open-resource`, { method: "POST" });
+    const data = await apiRequest(`/api/boxes/${boxId}/open-web`, { method: "POST" });
     if (data.url) window.open(data.url, "_blank");
+  } catch (err) {
+    showToast(err.message, "error");
+  }
+}
+
+async function unlockPlpFile(boxId) {
+  try {
+    const data = await apiRequest(`/api/boxes/${boxId}/open-plp`, { method: "POST" });
+    if (data.url) {
+      showToast("Downloading PLP / File package...", "info");
+      window.open(data.url, "_blank");
+    }
   } catch (err) {
     showToast(err.message, "error");
   }
@@ -353,12 +456,129 @@ async function unlockTutorial(boxId) {
   }
 }
 
+async function unlockApp(boxId) {
+  try {
+    const data = await apiRequest(`/api/boxes/${boxId}/open-app`, { method: "POST" });
+    if (data.url) window.open(data.url, "_blank");
+  } catch (err) {
+    showToast(err.message, "error");
+  }
+}
+
 function copyTemplate(btn, text) {
   navigator.clipboard.writeText(text).then(() => {
     const oldHtml = btn.innerHTML;
     btn.innerHTML = `<i class="fa-solid fa-check"></i> Copied!`;
     setTimeout(() => btn.innerHTML = oldHtml, 2000);
   });
+}
+
+async function deleteSector(sectorId) {
+  if (!confirm("Are you sure you want to delete this sector and all its boxes?")) return;
+  try {
+    await apiRequest(`/api/sectors/${sectorId}`, { method: "DELETE" });
+    showToast("Sector deleted successfully", "success");
+    loadDashboardData();
+  } catch (err) {
+    showToast(err.message, "error");
+  }
+}
+
+async function deleteBox(boxId) {
+  if (!confirm("Are you sure you want to delete this resource box?")) return;
+  try {
+    await apiRequest(`/api/boxes/${boxId}`, { method: "DELETE" });
+    showToast("Box deleted successfully", "success");
+    if (state.currentSector) loadBoxes(state.currentSector.id);
+  } catch (err) {
+    showToast(err.message, "error");
+  }
+}
+
+let selectedUserIdForAccess = null;
+
+function openAccessModal(userId) {
+  selectedUserIdForAccess = userId;
+  const user = state.users.find((u) => u.id === userId);
+  if (!user) return;
+
+  const modal = document.getElementById("user-access-modal");
+  const label = document.getElementById("access-modal-user-label");
+  const container = document.getElementById("sectors-access-checkboxes");
+
+  if (label) label.textContent = `User: ${user.name || user.email} (${user.email})`;
+
+  const userAccess = user.accessList || [];
+  const hasWildcard = userAccess.includes("*");
+
+  let html = `
+    <label class="checkbox-item" style="font-weight:700; color:var(--accent); margin-bottom:8px;">
+      <input type="checkbox" id="access-all-checkbox" ${hasWildcard ? 'checked' : ''} onchange="toggleAllAccess(this.checked)">
+      <span>⭐ Full Master Access (All Sectors)</span>
+    </label>
+    <hr style="border:0; border-top:1px solid var(--border-color); margin:8px 0;" />
+  `;
+
+  state.sectors.forEach((sec) => {
+    const isChecked = hasWildcard || userAccess.includes(sec.id);
+    html += `
+      <label class="checkbox-item">
+        <input type="checkbox" class="sector-access-check" data-sector-id="${sec.id}" ${isChecked ? 'checked' : ''} ${hasWildcard ? 'disabled' : ''}>
+        <span>${escapeHtml(sec.name)}</span>
+      </label>
+    `;
+  });
+
+  if (container) container.innerHTML = html;
+  modal?.classList.remove("hidden");
+}
+
+function toggleAllAccess(checked) {
+  document.querySelectorAll(".sector-access-check").forEach((cb) => {
+    cb.checked = checked;
+    cb.disabled = checked;
+  });
+}
+
+async function saveUserAccess() {
+  if (!selectedUserIdForAccess) return;
+
+  const isAllChecked = document.getElementById("access-all-checkbox")?.checked;
+  let accessList = [];
+
+  if (isAllChecked) {
+    accessList = ["*"];
+  } else {
+    document.querySelectorAll(".sector-access-check:checked").forEach((cb) => {
+      accessList.push(cb.getAttribute("data-sector-id"));
+    });
+  }
+
+  try {
+    await apiRequest(`/api/admin/users/${selectedUserIdForAccess}/access`, {
+      method: "PUT",
+      body: JSON.stringify({ accessList }),
+    });
+    showToast("Permissions updated successfully", "success");
+    document.getElementById("user-access-modal")?.classList.add("hidden");
+    loadAdminUsers();
+  } catch (err) {
+    showToast(err.message, "error");
+  }
+}
+
+async function toggleUserRole(userId, newRole) {
+  if (!confirm(`Change role of this user to "${newRole}"?`)) return;
+  try {
+    await apiRequest(`/api/admin/users/${userId}/role`, {
+      method: "PUT",
+      body: JSON.stringify({ role: newRole }),
+    });
+    showToast(`User role updated to ${newRole}`, "success");
+    loadAdminUsers();
+  } catch (err) {
+    showToast(err.message, "error");
+  }
 }
 
 // ── Admin: User Management ─────────────────────────────────
@@ -500,6 +720,16 @@ document.addEventListener("DOMContentLoaded", () => {
     loadDashboardData();
   });
 
+  // User Profile Modal Listeners
+  document.getElementById("nav-user-chip")?.addEventListener("click", openProfileModal);
+  document.getElementById("close-profile-modal")?.addEventListener("click", () => {
+    document.getElementById("profile-modal")?.classList.add("hidden");
+  });
+  document.getElementById("close-profile-btn")?.addEventListener("click", () => {
+    document.getElementById("profile-modal")?.classList.add("hidden");
+  });
+  document.getElementById("profile-form")?.addEventListener("submit", handleProfileSave);
+
   // Auth Modals
   const authModal = document.getElementById("auth-modal");
   document.getElementById("open-login-btn")?.addEventListener("click", () => {
@@ -564,6 +794,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const address = document.getElementById("reg-address").value.trim();
     const btn = document.getElementById("register-submit-btn");
 
+    if (password.length < 6) {
+      showToast("Password must be at least 6 characters long", "error");
+      return;
+    }
+
     btn.disabled = true;
     btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Registering...`;
 
@@ -579,6 +814,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }),
       });
       handleLogin(res.token, res.user);
+      showToast("Account created successfully! Welcome to ZEINS.", "success");
     } catch (err) {
       showToast(err.message, "error");
     } finally {
@@ -613,44 +849,97 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // Box Create Modal
+  // Box Create & Edit Modal Listeners
   const boxModal = document.getElementById("box-modal");
-  document.getElementById("add-box-btn")?.addEventListener("click", () => {
-    boxModal?.classList.remove("hidden");
-  });
+  document.getElementById("add-box-btn")?.addEventListener("click", openCreateBoxModal);
   document.getElementById("close-box-modal")?.addEventListener("click", () => {
     boxModal?.classList.add("hidden");
   });
+
+  // Modal in-form file upload up to 150MB
+  const plpFileInput = document.getElementById("box-plp-file-input");
+  const plpStatus = document.getElementById("box-plp-status");
+  plpFileInput?.addEventListener("change", async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 150 * 1024 * 1024) {
+      showToast("File exceeds 150MB limit", "error");
+      return;
+    }
+
+    if (plpStatus) plpStatus.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Uploading ${escapeHtml(file.name)} (${(file.size / (1024 * 1024)).toFixed(1)}MB) to Cloudinary...`;
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const res = await apiRequest("/api/files/upload", {
+        method: "POST",
+        body: formData,
+      });
+      document.getElementById("box-plp-url").value = res.file.url;
+      if (plpStatus) plpStatus.innerHTML = `<span style="color:var(--success);">✅ Uploaded: ${escapeHtml(res.file.name)} (${(res.file.size / (1024 * 1024)).toFixed(1)}MB)</span>`;
+      showToast("File uploaded successfully (up to 150MB)!", "success");
+    } catch (err) {
+      if (plpStatus) plpStatus.textContent = "Upload failed: " + err.message;
+      showToast(err.message, "error");
+    }
+  });
+
   document.getElementById("box-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
     if (!state.currentSector) return;
 
+    const editId = document.getElementById("box-edit-id").value;
     const title = document.getElementById("box-title").value.trim();
     const instruction = document.getElementById("box-instruction").value.trim();
     const templateText = document.getElementById("box-template").value;
-    const resourceUrl = document.getElementById("box-resource-url").value.trim();
+    const webLink = document.getElementById("box-web-url").value.trim();
+    const plpFileUrl = document.getElementById("box-plp-url").value.trim();
     const tutorialUrl = document.getElementById("box-tutorial-url").value.trim();
+    const appLink = document.getElementById("box-app-url").value.trim();
     const tagsInput = document.getElementById("box-tags").value.trim();
     const tags = tagsInput ? tagsInput.split(",").map((t) => t.trim()).filter(Boolean) : [];
 
+    const payload = {
+      sectorId: state.currentSector.id,
+      title,
+      instruction,
+      templateText,
+      webLink,
+      resourceUrl: webLink,
+      plpFileUrl,
+      tutorialUrl,
+      appLink,
+      tags,
+    };
+
+    const submitBtn = document.getElementById("box-submit-btn");
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Saving...`;
+
     try {
-      await apiRequest("/api/boxes", {
-        method: "POST",
-        body: JSON.stringify({
-          sectorId: state.currentSector.id,
-          title,
-          instruction,
-          templateText,
-          resourceUrl,
-          tutorialUrl,
-          tags,
-        }),
-      });
+      if (editId) {
+        await apiRequest(`/api/boxes/${editId}`, {
+          method: "PUT",
+          body: JSON.stringify(payload),
+        });
+        showToast("Resource Box updated successfully!", "success");
+      } else {
+        await apiRequest("/api/boxes", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        showToast("Resource Box created successfully!", "success");
+      }
       boxModal?.classList.add("hidden");
-      showToast("Box created successfully!", "success");
       loadBoxes(state.currentSector.id);
     } catch (err) {
       showToast(err.message, "error");
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = editId ? "Save Changes" : "Save Resource Box";
     }
   });
 
@@ -673,6 +962,13 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.target.files.length) handleFileUpload(e.target.files[0]);
   });
 
+  // Access Modal Listeners
+  document.getElementById("close-access-modal")?.addEventListener("click", () => {
+    document.getElementById("user-access-modal")?.classList.add("hidden");
+  });
+  document.getElementById("save-access-btn")?.addEventListener("click", saveUserAccess);
+  document.getElementById("refresh-users-btn")?.addEventListener("click", loadAdminUsers);
+
   // Global Search Filter
   document.getElementById("global-search")?.addEventListener("input", (e) => {
     const q = e.target.value.toLowerCase();
@@ -681,7 +977,163 @@ document.addEventListener("DOMContentLoaded", () => {
       card.style.display = match ? "flex" : "none";
     });
   });
+
+  // ── Support & Inbox Event Listeners ───────────────────────
+  document.getElementById("refresh-support-btn")?.addEventListener("click", () => loadSupportTickets());
+  document.getElementById("open-support-modal-btn")?.addEventListener("click", () => openCreateSupportModal());
+  document.getElementById("placeholder-new-ticket-btn")?.addEventListener("click", () => openCreateSupportModal());
+  document.getElementById("floating-support-btn")?.addEventListener("click", () => switchView("support-view"));
+
+  document.getElementById("close-support-modal")?.addEventListener("click", () => {
+    document.getElementById("support-modal")?.classList.add("hidden");
+  });
+  document.getElementById("cancel-support-modal-btn")?.addEventListener("click", () => {
+    document.getElementById("support-modal")?.classList.add("hidden");
+  });
+  document.getElementById("support-ticket-form")?.addEventListener("submit", handleSupportTicketCreate);
+  document.getElementById("thread-reply-form")?.addEventListener("submit", handleReplySubmit);
+
+  // Filter tabs for tickets
+  document.querySelectorAll(".support-filter-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".support-filter-btn").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      state.supportFilter = btn.getAttribute("data-filter") || "all";
+      renderSupportTicketList();
+    });
+  });
+
+  // Ticket search filter
+  document.getElementById("support-search-input")?.addEventListener("input", () => {
+    renderSupportTicketList();
+  });
 });
+
+// ── Resource Box Create & Edit Modals ─────────────────────
+function openCreateBoxModal() {
+  const modal = document.getElementById("box-modal");
+  if (!modal) return;
+  document.getElementById("box-edit-id").value = "";
+  document.getElementById("box-modal-title").textContent = "Create New Resource Box";
+  document.getElementById("box-submit-btn").textContent = "Create Resource Box";
+  document.getElementById("box-title").value = "";
+  document.getElementById("box-template").value = "";
+  document.getElementById("box-web-url").value = "";
+  document.getElementById("box-instruction").value = "";
+  document.getElementById("box-plp-url").value = "";
+  document.getElementById("box-tutorial-url").value = "";
+  document.getElementById("box-app-url").value = "";
+  document.getElementById("box-tags").value = "";
+  document.getElementById("box-plp-status").textContent = "Attach .plp, .zip, .apk, .rar or folder archive (up to 150MB). Masked and protected for regular users.";
+  modal.classList.remove("hidden");
+}
+
+function openEditBoxModal(boxId) {
+  const box = state.boxes.find((b) => b.id === boxId);
+  if (!box) return;
+  const modal = document.getElementById("box-modal");
+  if (!modal) return;
+
+  document.getElementById("box-edit-id").value = boxId;
+  document.getElementById("box-modal-title").textContent = "Edit Resource Box";
+  document.getElementById("box-submit-btn").textContent = "Save Changes";
+  document.getElementById("box-title").value = box.title || "";
+  document.getElementById("box-template").value = box.templateText || "";
+  document.getElementById("box-web-url").value = (box.webLink && box.webLink !== "HIDDEN") ? box.webLink : (box.resourceUrl && box.resourceUrl !== "HIDDEN") ? box.resourceUrl : "";
+  document.getElementById("box-instruction").value = box.instruction || "";
+  document.getElementById("box-plp-url").value = (box.plpFileUrl && box.plpFileUrl !== "HIDDEN") ? box.plpFileUrl : "";
+  document.getElementById("box-tutorial-url").value = (box.tutorialUrl && box.tutorialUrl !== "HIDDEN") ? box.tutorialUrl : "";
+  document.getElementById("box-app-url").value = (box.appLink && box.appLink !== "HIDDEN") ? box.appLink : "";
+  document.getElementById("box-tags").value = (box.tags || []).join(", ");
+  document.getElementById("box-plp-status").textContent = box.plpFileUrl ? "Current PLP file attached." : "Attach .plp, .zip, .apk, .rar or folder archive (up to 150MB).";
+  modal.classList.remove("hidden");
+}
+
+// ── User Profile Handling ─────────────────────────────────
+async function openProfileModal() {
+  if (!state.token || !state.user) return;
+  const modal = document.getElementById("profile-modal");
+  if (!modal) return;
+
+  try {
+    const data = await apiRequest("/api/users/profile");
+    const user = data.user || state.user;
+
+    const emailInput = document.getElementById("profile-email");
+    const nameInput = document.getElementById("profile-name");
+    const phoneInput = document.getElementById("profile-phone");
+    const addressInput = document.getElementById("profile-address");
+    const avatarEl = document.getElementById("profile-modal-avatar");
+    const titleEl = document.getElementById("profile-modal-title");
+    const roleEl = document.getElementById("profile-modal-role");
+    const accessEl = document.getElementById("profile-access-summary");
+
+    if (emailInput) emailInput.value = user.email || "";
+    if (nameInput) nameInput.value = user.name || "";
+    if (phoneInput) phoneInput.value = user.phone || "";
+    if (addressInput) addressInput.value = user.address || "";
+    if (avatarEl) avatarEl.textContent = (user.name || user.email)[0].toUpperCase();
+    if (titleEl) titleEl.textContent = user.name || "My Profile";
+    if (roleEl) {
+      roleEl.textContent = (user.role || "user").toUpperCase();
+      roleEl.className = `role-badge ${user.role || 'user'}`;
+    }
+
+    if (accessEl) {
+      const isOwner = user.role === "owner" || user.role === "admin";
+      const hasWildcard = user.accessList?.includes("*");
+      if (isOwner || hasWildcard) {
+        accessEl.innerHTML = `<span style="color:var(--accent); font-weight:700;">⭐ Master Access</span><br>Full unrestricted access to all sectors, tools, and downloads.`;
+      } else if (user.accessList && user.accessList.length > 0) {
+        accessEl.innerHTML = `<span style="color:var(--text-main); font-weight:600;">Granted ${user.accessList.length} restricted sector(s)</span><br>Plus all open public sectors and community tools.`;
+      } else {
+        accessEl.innerHTML = `<span style="color:var(--text-dim);">🌐 Public Access</span><br>Access to all public sectors & tools. Contact the owner (<strong style="color:var(--accent);">av6r01@gmail.com</strong>) if you require private sector permissions.`;
+      }
+    }
+
+    modal.classList.remove("hidden");
+  } catch (err) {
+    showToast("Failed to load profile: " + err.message, "error");
+  }
+}
+
+async function handleProfileSave(e) {
+  e.preventDefault();
+  const name = document.getElementById("profile-name")?.value.trim();
+  const phone = document.getElementById("profile-phone")?.value.trim();
+  const address = document.getElementById("profile-address")?.value.trim();
+  const btn = document.getElementById("save-profile-btn");
+
+  if (!name) {
+    showToast("Name cannot be empty", "error");
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Saving...`;
+
+  try {
+    await apiRequest("/api/users/profile", {
+      method: "PUT",
+      body: JSON.stringify({ name, phone, address }),
+    });
+
+    if (state.user) {
+      state.user.name = name;
+      state.user.phone = phone;
+      state.user.address = address;
+      localStorage.setItem("zeins_user", JSON.stringify(state.user));
+    }
+    updateAuthUI();
+    document.getElementById("profile-modal")?.classList.add("hidden");
+    showToast("Profile updated successfully!", "success");
+  } catch (err) {
+    showToast(err.message, "error");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `<i class="fa-solid fa-floppy-disk"></i> Save Profile`;
+  }
+}
 
 // ── Helpers ────────────────────────────────────────────────
 function escapeHtml(str) {
@@ -695,3 +1147,411 @@ function escapeJs(str) {
   if (!str) return "";
   return str.replace(/`/g, "\\`").replace(/\$/g, "\\$");
 }
+
+// ── Support & Inbox Management ────────────────────────────
+function updateSupportBadges(count) {
+  const navBadge = document.getElementById("support-unread-badge");
+  const floatingBadge = document.getElementById("floating-unread-badge");
+  const val = Number(count) || 0;
+
+  [navBadge, floatingBadge].forEach((badge) => {
+    if (!badge) return;
+    if (val > 0) {
+      badge.textContent = val > 99 ? "99+" : val;
+      badge.classList.remove("hidden");
+    } else {
+      badge.classList.add("hidden");
+    }
+  });
+}
+
+async function loadSupportUnreadCount() {
+  if (!state.token) return;
+  try {
+    const data = await apiRequest("/api/support");
+    updateSupportBadges(data.unreadCount || 0);
+  } catch (_) {}
+}
+
+async function loadSupportTickets(selectTicketId = null) {
+  if (!state.token) {
+    const listContainer = document.getElementById("support-tickets-list");
+    if (listContainer) {
+      listContainer.innerHTML = `
+        <div class="empty-state">
+          <i class="fa-solid fa-lock"></i>
+          <p>Please log in or create an account to view your support inbox and send messages.</p>
+          <button type="button" class="btn btn-primary btn-sm" onclick="document.getElementById('auth-modal').classList.remove('hidden')">
+            <i class="fa-solid fa-arrow-right-to-bracket"></i> Login / Sign Up
+          </button>
+        </div>
+      `;
+    }
+    return;
+  }
+
+  const listContainer = document.getElementById("support-tickets-list");
+  if (!listContainer) return;
+
+  try {
+    const data = await apiRequest("/api/support");
+    state.tickets = data.tickets || [];
+    updateSupportBadges(data.unreadCount || 0);
+
+    renderSupportTicketList();
+
+    const targetId = selectTicketId || state.currentTicketId;
+    if (targetId && state.tickets.some((t) => t.id === targetId)) {
+      openTicketThread(targetId);
+    } else if (state.tickets.length > 0 && window.innerWidth > 900 && !state.currentTicketId) {
+      openTicketThread(state.tickets[0].id);
+    } else if (state.tickets.length === 0) {
+      document.getElementById("support-empty-placeholder")?.classList.remove("hidden");
+      document.getElementById("support-thread-container")?.classList.add("hidden");
+    }
+  } catch (err) {
+    listContainer.innerHTML = `
+      <div class="empty-state">
+        <i class="fa-solid fa-circle-exclamation text-danger"></i>
+        <p>${escapeHtml(err.message || "Failed to load support tickets")}</p>
+      </div>
+    `;
+  }
+}
+
+function renderSupportTicketList() {
+  const listContainer = document.getElementById("support-tickets-list");
+  if (!listContainer) return;
+
+  const q = (document.getElementById("support-search-input")?.value || "").toLowerCase().trim();
+  const filter = state.supportFilter || "all";
+  const isAdmin = state.user?.role === "admin" || state.user?.role === "owner";
+
+  let filtered = state.tickets.filter((t) => {
+    if (filter !== "all" && t.status !== filter) return false;
+    if (q) {
+      const matchSubject = (t.subject || "").toLowerCase().includes(q);
+      const matchEmail = (t.userEmail || "").toLowerCase().includes(q);
+      const matchName = (t.userName || "").toLowerCase().includes(q);
+      const matchCategory = (t.category || "").toLowerCase().includes(q);
+      if (!matchSubject && !matchEmail && !matchName && !matchCategory) return false;
+    }
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    listContainer.innerHTML = `
+      <div class="empty-state">
+        <i class="fa-solid fa-inbox"></i>
+        <p>No support tickets found in this view.</p>
+      </div>
+    `;
+    return;
+  }
+
+  listContainer.innerHTML = filtered
+    .map((t) => {
+      const isActive = t.id === state.currentTicketId;
+      const isUnread = isAdmin ? t.unreadByAdmin : t.unreadByUser;
+      const dateStr = t.createdAt ? new Date(t.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
+
+      return `
+      <div class="ticket-item-card ${isActive ? "active" : ""} ${isUnread ? "has-unread" : ""}" onclick="openTicketThread('${t.id}')">
+        <div class="ticket-card-top">
+          <span class="ticket-card-subject" title="${escapeHtml(t.subject)}">${escapeHtml(t.subject)}</span>
+          <span class="badge-status ${escapeHtml(t.status || 'open')}">${escapeHtml(t.status || 'open')}</span>
+        </div>
+        <div class="ticket-card-badges">
+          <span class="badge-priority ${escapeHtml(t.priority || 'normal')}">${escapeHtml(t.priority || 'normal')}</span>
+          <span class="box-tag">${escapeHtml(t.category || 'Support')}</span>
+        </div>
+        <div class="ticket-card-meta">
+          <span><i class="fa-solid fa-user"></i> ${escapeHtml(isAdmin ? (t.userName || t.userEmail) : 'You')}</span>
+          <span><i class="fa-solid fa-clock"></i> ${dateStr}</span>
+        </div>
+      </div>
+    `;
+    })
+    .join("");
+}
+
+async function openTicketThread(ticketId) {
+  state.currentTicketId = ticketId;
+  renderSupportTicketList();
+
+  const placeholder = document.getElementById("support-empty-placeholder");
+  const threadContainer = document.getElementById("support-thread-container");
+  if (placeholder) placeholder.classList.add("hidden");
+  if (threadContainer) threadContainer.classList.remove("hidden");
+
+  try {
+    const data = await apiRequest(`/api/support/${ticketId}`);
+    const ticket = data.ticket;
+    const isAdmin = state.user?.role === "admin" || state.user?.role === "owner";
+
+    // Update local ticket with marked-read status
+    const idx = state.tickets.findIndex((t) => t.id === ticketId);
+    if (idx !== -1) {
+      state.tickets[idx] = ticket;
+    }
+
+    // Recalculate unread badge
+    const unreadCount = isAdmin
+      ? state.tickets.filter((t) => t.unreadByAdmin).length
+      : state.tickets.filter((t) => t.unreadByUser).length;
+    updateSupportBadges(unreadCount);
+
+    // Subject & Badges
+    const subjectEl = document.getElementById("thread-subject");
+    const priorityEl = document.getElementById("thread-priority-badge");
+    const statusBadgeEl = document.getElementById("thread-status-badge");
+    const requesterEl = document.getElementById("thread-requester");
+    const categoryEl = document.getElementById("thread-category");
+    const dateEl = document.getElementById("thread-date");
+
+    if (subjectEl) subjectEl.textContent = ticket.subject;
+    if (priorityEl) {
+      priorityEl.textContent = ticket.priority || "normal";
+      priorityEl.className = `badge-priority ${ticket.priority || 'normal'}`;
+    }
+    if (statusBadgeEl) {
+      statusBadgeEl.textContent = ticket.status || "open";
+      statusBadgeEl.className = `badge-status ${ticket.status || 'open'}`;
+    }
+    if (requesterEl) requesterEl.innerHTML = `<i class="fa-solid fa-user"></i> ${escapeHtml(ticket.userName || ticket.userEmail)} (${escapeHtml(ticket.userEmail)})`;
+    if (categoryEl) categoryEl.innerHTML = `<i class="fa-solid fa-tag"></i> ${escapeHtml(ticket.category || 'General Support')}`;
+    if (dateEl) {
+      const dt = ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "";
+      dateEl.innerHTML = `<i class="fa-solid fa-clock"></i> ${dt}`;
+    }
+
+    // Sector request banner & Quick Grant button
+    const banner = document.getElementById("thread-sector-banner");
+    const sectorNameEl = document.getElementById("thread-sector-name");
+    const grantBtn = document.getElementById("thread-grant-sector-btn");
+
+    if (ticket.sectorId) {
+      if (banner) banner.classList.remove("hidden");
+      if (sectorNameEl) sectorNameEl.textContent = ticket.sectorName || ticket.sectorId;
+      if (grantBtn) {
+        if (isAdmin && ticket.status !== "resolved") {
+          grantBtn.classList.remove("hidden");
+          grantBtn.onclick = () => grantTicketSector(ticket.id);
+        } else {
+          grantBtn.classList.add("hidden");
+        }
+      }
+    } else {
+      if (banner) banner.classList.add("hidden");
+      if (grantBtn) grantBtn.classList.add("hidden");
+    }
+
+    // Admin status select
+    const statusSelect = document.getElementById("thread-status-select");
+    if (statusSelect) {
+      statusSelect.value = ticket.status || "open";
+      statusSelect.onchange = (e) => updateTicketStatus(ticket.id, e.target.value);
+    }
+
+    // Admin delete button
+    const deleteBtn = document.getElementById("thread-delete-btn");
+    if (deleteBtn) {
+      deleteBtn.onclick = () => deleteSupportTicket(ticket.id);
+    }
+
+    // Render Messages
+    renderThreadMessages(ticket.messages || []);
+  } catch (err) {
+    showToast(err.message || "Failed to load conversation thread", "error");
+  }
+}
+
+function renderThreadMessages(messages) {
+  const container = document.getElementById("thread-messages-list");
+  if (!container) return;
+
+  if (!messages || messages.length === 0) {
+    container.innerHTML = `<div class="empty-state"><p>No messages in this conversation yet.</p></div>`;
+    return;
+  }
+
+  const currentUid = state.user?.uid;
+
+  container.innerHTML = messages
+    .map((m) => {
+      const isMe = m.senderId === currentUid;
+      const isStaff = m.senderRole === "admin" || m.senderRole === "owner";
+      const isOwner = m.senderRole === "owner";
+      const isSystem = (m.senderName || "").includes("(System Action)");
+
+      let bubbleType = isSystem ? "system" : isMe ? "user" : "staff";
+      let staffClass = isOwner ? "owner-staff" : "";
+
+      const timeFormatted = m.timestamp ? new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "";
+
+      return `
+      <div class="msg-bubble-wrap ${bubbleType} ${staffClass}">
+        <div class="msg-sender-meta">
+          ${isOwner ? '<i class="fa-solid fa-crown text-yellow"></i>' : isStaff ? '<i class="fa-solid fa-shield-halved text-accent"></i>' : '<i class="fa-solid fa-user"></i>'}
+          <strong>${escapeHtml(isMe ? "You" : m.senderName || m.senderEmail)}</strong>
+          ${isOwner ? '<span class="role-badge owner">Owner</span>' : isStaff ? '<span class="role-badge admin">Admin</span>' : ''}
+          <span>• ${timeFormatted}</span>
+        </div>
+        <div class="msg-bubble">${escapeHtml(m.text)}</div>
+      </div>
+    `;
+    })
+    .join("");
+
+  container.scrollTop = container.scrollHeight;
+}
+
+async function handleReplySubmit(e) {
+  e.preventDefault();
+  if (!state.currentTicketId) return;
+
+  const input = document.getElementById("thread-reply-input");
+  const sendBtn = document.getElementById("thread-reply-send-btn");
+  const text = input?.value.trim();
+
+  if (!text) return;
+
+  sendBtn.disabled = true;
+  sendBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Sending...`;
+
+  try {
+    await apiRequest(`/api/support/${state.currentTicketId}/reply`, {
+      method: "POST",
+      body: JSON.stringify({ message: text }),
+    });
+
+    input.value = "";
+    showToast("Reply sent successfully", "success");
+
+    // Refresh current ticket
+    await openTicketThread(state.currentTicketId);
+    // Reload ticket list to refresh timestamps and order
+    const listRes = await apiRequest("/api/support");
+    state.tickets = listRes.tickets || [];
+    renderSupportTicketList();
+  } catch (err) {
+    showToast(err.message || "Failed to send reply", "error");
+  } finally {
+    sendBtn.disabled = false;
+    sendBtn.innerHTML = `<i class="fa-solid fa-paper-plane"></i> Send Reply`;
+  }
+}
+
+async function updateTicketStatus(ticketId, status) {
+  try {
+    await apiRequest(`/api/support/${ticketId}/status`, {
+      method: "PUT",
+      body: JSON.stringify({ status }),
+    });
+    showToast(`Ticket status updated to ${status}`, "success");
+    await openTicketThread(ticketId);
+  } catch (err) {
+    showToast(err.message || "Failed to update status", "error");
+  }
+}
+
+async function grantTicketSector(ticketId) {
+  if (!confirm("Are you sure you want to approve this sector access request?")) return;
+  try {
+    await apiRequest(`/api/support/${ticketId}/grant-sector`, {
+      method: "POST",
+    });
+    showToast("Sector access granted and ticket marked resolved!", "success");
+    await openTicketThread(ticketId);
+  } catch (err) {
+    showToast(err.message || "Failed to grant sector access", "error");
+  }
+}
+
+async function deleteSupportTicket(ticketId) {
+  if (!confirm("Are you sure you want to delete this support ticket permanently?")) return;
+  try {
+    await apiRequest(`/api/support/${ticketId}`, {
+      method: "DELETE",
+    });
+    showToast("Support ticket deleted", "info");
+    state.currentTicketId = null;
+    await loadSupportTickets();
+  } catch (err) {
+    showToast(err.message || "Failed to delete ticket", "error");
+  }
+}
+
+function openCreateSupportModal(preselectedSectorId = null) {
+  if (!state.token) {
+    showToast("Please login first to submit a support request", "info");
+    document.getElementById("auth-modal")?.classList.remove("hidden");
+    return;
+  }
+
+  const modal = document.getElementById("support-modal");
+  if (!modal) return;
+
+  const sectorSelect = document.getElementById("ticket-sector-select");
+  if (sectorSelect) {
+    sectorSelect.innerHTML = `<option value="">-- Choose a Sector to Request Access --</option>` +
+      state.sectors.map((s) => `<option value="${s.id}" data-name="${escapeHtml(s.name)}">${escapeHtml(s.name)}</option>`).join("");
+    if (preselectedSectorId) {
+      sectorSelect.value = preselectedSectorId;
+      document.getElementById("ticket-category").value = "Sector Access Request";
+    }
+  }
+
+  document.getElementById("ticket-subject").value = "";
+  document.getElementById("ticket-message").value = "";
+  modal.classList.remove("hidden");
+}
+
+async function handleSupportTicketCreate(e) {
+  e.preventDefault();
+  const category = document.getElementById("ticket-category").value;
+  const sectorSelect = document.getElementById("ticket-sector-select");
+  const sectorId = sectorSelect?.value || null;
+  const sectorOption = sectorSelect?.options[sectorSelect.selectedIndex];
+  const sectorName = sectorOption?.getAttribute("data-name") || null;
+  const priority = document.getElementById("ticket-priority").value;
+  const subject = document.getElementById("ticket-subject").value.trim();
+  const message = document.getElementById("ticket-message").value.trim();
+  const submitBtn = document.getElementById("ticket-submit-btn");
+
+  if (!subject || !message) {
+    showToast("Please fill in both subject and message", "error");
+    return;
+  }
+
+  submitBtn.disabled = true;
+  submitBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Submitting...`;
+
+  try {
+    const res = await apiRequest("/api/support", {
+      method: "POST",
+      body: JSON.stringify({
+        category,
+        sectorId,
+        sectorName,
+        priority,
+        subject,
+        message,
+      }),
+    });
+
+    document.getElementById("support-modal")?.classList.add("hidden");
+    showToast("Support request submitted successfully!", "success");
+
+    // Switch to support view and select this new ticket
+    switchView("support-view");
+    await loadSupportTickets(res.ticket?.id);
+  } catch (err) {
+    showToast(err.message || "Failed to create support ticket", "error");
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.innerHTML = `<i class="fa-solid fa-paper-plane"></i> Submit Request`;
+  }
+}
+
+

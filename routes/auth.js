@@ -5,13 +5,48 @@ const jwt = require("jsonwebtoken");
 const { auth, db } = require("../config/firebase");
 const { verifyToken } = require("../middleware/auth");
 
+// Password helpers (supports both salted new format and legacy unsalted SHA-256)
+function hashPassword(password) {
+  if (!password) return "";
+  const salt = crypto.randomBytes(16).toString("hex");
+  const hash = crypto.createHash("sha256").update(password + salt).digest("hex");
+  return `${hash}:${salt}`;
+}
+
+function verifyPassword(password, storedHash) {
+  if (!storedHash) return true; // Account created without password
+  if (storedHash.includes(":")) {
+    const [hash, salt] = storedHash.split(":");
+    const testHash = crypto.createHash("sha256").update(password + salt).digest("hex");
+    return testHash === hash;
+  }
+  // Legacy unsalted sha256
+  const legacyHash = crypto.createHash("sha256").update(password).digest("hex");
+  return legacyHash === storedHash;
+}
+
 // POST /api/auth/register
 router.post("/register", async (req, res) => {
   try {
     const { uid: clientUid, name, email, password, phone, address } = req.body;
-    if (!email) return res.status(400).json({ error: "email is required" });
+    if (!email) return res.status(400).json({ error: "Email is required" });
 
     const normalizedEmail = email.toLowerCase().trim();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(normalizedEmail)) {
+      return res.status(400).json({ error: "Please provide a valid email address" });
+    }
+
+    if (!password || password.length < 6) {
+      return res.status(400).json({ error: "Password must be at least 6 characters long" });
+    }
+
+    // Check if account already exists
+    const existingSnap = await db.collection("users").where("email", "==", normalizedEmail).limit(1).get();
+    if (!existingSnap.empty) {
+      return res.status(400).json({ error: "An account with this email address already exists. Please log in." });
+    }
+
     const uid = clientUid || ("user_" + crypto.createHash("md5").update(normalizedEmail).digest("hex").slice(0, 20));
 
     // Check if first user or designated owner mail — make them owner
@@ -20,17 +55,17 @@ router.post("/register", async (req, res) => {
     const isOwnerEmail = normalizedEmail === "av6r01@gmail.com";
     const isOwner = isFirstUser || isOwnerEmail;
 
-    const passwordHash = password ? crypto.createHash("sha256").update(password).digest("hex") : "";
+    const passwordHash = hashPassword(password);
 
     const userData = {
       uid,
-      name: name || (isOwnerEmail ? "Avro (Owner)" : normalizedEmail.split("@")[0]),
+      name: name?.trim() || (isOwnerEmail ? "Avro (Owner)" : normalizedEmail.split("@")[0]),
       email: normalizedEmail,
       passwordHash,
-      phone: phone || "",
-      address: address || "",
+      phone: phone?.trim() || "",
+      address: address?.trim() || "",
       role: isOwner ? "owner" : "user",
-      accessList: isOwner ? ["*"] : [], // Owner gets all, others start with none
+      accessList: isOwner ? ["*"] : [], // Owner gets full access; users get public sectors by default
       isActive: true,
       socials: {
         facebook: "",
@@ -43,7 +78,7 @@ router.post("/register", async (req, res) => {
       updatedAt: new Date().toISOString(),
     };
 
-    await db.collection("users").doc(uid).set(userData, { merge: true });
+    await db.collection("users").doc(uid).set(userData);
 
     const token = jwt.sign(
       { uid, email: normalizedEmail, role: userData.role },
@@ -51,9 +86,12 @@ router.post("/register", async (req, res) => {
       { expiresIn: "30d" }
     );
 
-    res.status(201).json({ message: "User registered", token, user: userData });
+    // Return user without sensitive fields
+    const { passwordHash: _, ...safeUser } = userData;
+    res.status(201).json({ message: "User registered successfully", token, user: safeUser });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("Register error:", err);
+    res.status(500).json({ error: err.message || "Registration failed" });
   }
 });
 
@@ -62,6 +100,7 @@ router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email) return res.status(400).json({ error: "Email is required" });
+    if (!password) return res.status(400).json({ error: "Password is required" });
 
     const normalizedEmail = email.toLowerCase().trim();
     const snap = await db.collection("users").where("email", "==", normalizedEmail).limit(1).get();
@@ -73,7 +112,7 @@ router.post("/login", async (req, res) => {
       // Auto-provision if owner email
       if (normalizedEmail === "av6r01@gmail.com") {
         const uid = "owner_" + crypto.createHash("md5").update(normalizedEmail).digest("hex").slice(0, 20);
-        const passwordHash = password ? crypto.createHash("sha256").update(password).digest("hex") : "";
+        const passwordHash = hashPassword(password);
         userData = {
           uid,
           name: "Avro (Owner)",
@@ -90,27 +129,26 @@ router.post("/login", async (req, res) => {
         await db.collection("users").doc(uid).set(userData);
         userDoc = { id: uid };
       } else {
-        return res.status(401).json({ error: "User not found. Please sign up first." });
+        return res.status(401).json({ error: "Account not found. Please click 'Sign Up' to create your account." });
       }
     } else {
       userDoc = snap.docs[0];
       userData = userDoc.data();
 
-      // Check password if configured
-      if (userData.passwordHash && password) {
-        const hash = crypto.createHash("sha256").update(password).digest("hex");
-        if (userData.passwordHash !== hash) {
-          return res.status(401).json({ error: "Incorrect password" });
+      // Check password if set
+      if (userData.passwordHash) {
+        if (!verifyPassword(password, userData.passwordHash)) {
+          return res.status(401).json({ error: "Incorrect password. Please try again." });
         }
-      } else if (!userData.passwordHash && password) {
-        // Set initial password
-        const hash = crypto.createHash("sha256").update(password).digest("hex");
-        await db.collection("users").doc(userDoc.id).update({ passwordHash: hash });
+      } else {
+        // Set initial password for account created without one
+        const passwordHash = hashPassword(password);
+        await db.collection("users").doc(userDoc.id).update({ passwordHash });
       }
     }
 
     if (!userData.isActive) {
-      return res.status(403).json({ error: "Account is disabled. Contact system administrator." });
+      return res.status(403).json({ error: "This account has been deactivated. Please contact av6r01@gmail.com." });
     }
 
     const token = jwt.sign(
@@ -131,7 +169,8 @@ router.post("/login", async (req, res) => {
       },
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("Login error:", err);
+    res.status(500).json({ error: err.message || "Login failed" });
   }
 });
 
@@ -149,6 +188,37 @@ router.post("/logout", verifyToken, async (req, res) => {
     res.json({ message: "Logged out successfully" });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/auth/reset-password
+router.post("/reset-password", async (req, res) => {
+  try {
+    const { email, newPassword } = req.body;
+    if (!email || !newPassword) return res.status(400).json({ error: "Email and newPassword are required" });
+
+    const normalizedEmail = email.toLowerCase().trim();
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: "Password must be at least 6 characters long" });
+    }
+
+    const snap = await db.collection("users").where("email", "==", normalizedEmail).limit(1).get();
+    if (snap.empty) {
+      return res.status(404).json({ error: "No account found with this email address" });
+    }
+
+    const userDoc = snap.docs[0];
+    const passwordHash = hashPassword(newPassword);
+
+    await db.collection("users").doc(userDoc.id).update({
+      passwordHash,
+      updatedAt: new Date().toISOString(),
+    });
+
+    res.json({ message: "Password updated successfully! You can now log in with your new password." });
+  } catch (err) {
+    console.error("Reset password error:", err);
+    res.status(500).json({ error: err.message || "Failed to reset password" });
   }
 });
 

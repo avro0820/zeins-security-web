@@ -10,9 +10,15 @@ if (!admin.apps.length) {
     console.log("🔑 Firebase: loaded from serviceAccountKey.json");
   } catch (_) {
     // Option 2: Environment variable (Render.com production)
-    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    const rawServiceAccount = process.env.FIREBASE_SERVICE_ACCOUNT || process.env.FIREBASE_SERVICE_ACCOUNT_BASE64;
+    if (rawServiceAccount) {
       try {
-        const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+        let jsonString = rawServiceAccount.trim();
+        // Support base64 encoded string if provided
+        if (!jsonString.startsWith("{")) {
+          jsonString = Buffer.from(jsonString, "base64").toString("utf-8");
+        }
+        const serviceAccount = JSON.parse(jsonString);
         credential = admin.credential.cert(serviceAccount);
         console.log("🔑 Firebase: loaded from FIREBASE_SERVICE_ACCOUNT env var");
       } catch (e) {
@@ -21,17 +27,24 @@ if (!admin.apps.length) {
       }
     } else {
       // Option 3: Google Application Default Credentials (Google Cloud)
-      credential = admin.credential.applicationDefault();
-      console.log("🔑 Firebase: using Application Default Credentials");
+      try {
+        credential = admin.credential.applicationDefault();
+        console.log("🔑 Firebase: using Application Default Credentials");
+      } catch (adcErr) {
+        console.warn("⚠️ Firebase credentials not found! Ensure serviceAccountKey.json exists locally or FIREBASE_SERVICE_ACCOUNT is configured in Render.");
+      }
     }
   }
 
-  admin.initializeApp({
-    credential,
-    storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-  });
-
-  console.log(`📦 Storage bucket: ${process.env.FIREBASE_STORAGE_BUCKET}`);
+  try {
+    admin.initializeApp({
+      credential,
+      storageBucket: process.env.FIREBASE_STORAGE_BUCKET || "zeins-web-setup.firebasestorage.app",
+    });
+    console.log(`📦 Storage bucket: ${process.env.FIREBASE_STORAGE_BUCKET || "zeins-web-setup.firebasestorage.app"}`);
+  } catch (initErr) {
+    console.error("❌ Firebase initializeApp error:", initErr.message);
+  }
 }
 
 const db      = admin.firestore();
