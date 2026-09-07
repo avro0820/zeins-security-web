@@ -1663,3 +1663,11 @@ h1, h2, h3, h4, .brand-title, .stat-value {
   height: 48px;
 }
 
+/* Utilities */
+.flex-1 {
+  flex: 1;
+}
+
+.file-input-hidden {
+  display: none;
+}

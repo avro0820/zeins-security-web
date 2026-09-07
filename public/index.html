@@ -247,7 +247,7 @@
         </table>
       </div>
     </section>
- 
+
     <!-- VIEW 5: SUPPORT CENTER & INBOX -->
     <section id="support-view" class="content-view">
       <div class="view-header">
@@ -318,7 +318,7 @@
               <!-- Admin Controls & Sector Granting -->
               <div class="thread-header-actions" id="thread-admin-actions">
                 <button type="button" class="btn btn-success btn-sm hidden" id="thread-grant-sector-btn">
-                  <i class="fa-solid fa-shield-check"></i> ⚡ Grant Requested Sector
+                  <i class="fa-solid fa-shield-check"></i> âš¡ Grant Requested Sector
                 </button>
                 <div class="status-select-wrap admin-only hidden">
                   <label for="thread-status-select" class="sr-only">Status</label>
@@ -329,7 +329,7 @@
                     <option value="closed">Closed</option>
                   </select>
                 </div>
-                <button type="button" class="btn btn-outline btn-sm admin-only hidden" id="thread-delete-btn" title="Delete Ticket">
+                <button type="button" class="btn btn-outline btn-sm admin-only hidden" id="thread-delete-btn" title="Delete Ticket" aria-label="Delete Ticket">
                   <i class="fa-solid fa-trash text-danger"></i>
                 </button>
               </div>
@@ -506,10 +506,10 @@
         <div class="form-group">
           <label for="box-plp-url"><i class="fa-solid fa-folder-arrow-down text-accent"></i> 4th Option: PLP Files / Folders (Max 150MB)</label>
           <div class="modal-btn-row">
-            <input type="url" id="box-plp-url" placeholder="https://... or click Upload to select a file" style="flex:1;">
+            <input type="url" id="box-plp-url" class="flex-1" placeholder="https://... or click Upload to select a file">
             <label class="btn btn-outline btn-sm file-upload-label" title="Upload local file up to 150MB">
               <i class="fa-solid fa-cloud-arrow-up"></i> Upload (150MB)
-              <input type="file" id="box-plp-file-input" style="display:none;">
+              <input type="file" id="box-plp-file-input" class="file-input-hidden">
             </label>
           </div>
           <span class="form-hint-text" id="box-plp-status">Attach .plp, .zip, .apk, .rar or folder archive (up to 150MB). Masked and protected for regular users.</span>
@@ -643,11 +643,11 @@
         <div class="form-group">
           <label for="ticket-category">Category</label>
           <select id="ticket-category" class="form-select" required>
-            <option value="Sector Access Request">🔑 Sector Access Request</option>
-            <option value="Resource Box Help">📦 Resource Box / Tool Assistance</option>
-            <option value="Technical Issue">⚠️ Technical Bug or Broken Link</option>
-            <option value="Account Inquiry">👤 Account / Permissions Inquiry</option>
-            <option value="General Support">💬 General Support / Feedback</option>
+            <option value="Sector Access Request">ðŸ”‘ Sector Access Request</option>
+            <option value="Resource Box Help">ðŸ“¦ Resource Box / Tool Assistance</option>
+            <option value="Technical Issue">âš ï¸ Technical Bug or Broken Link</option>
+            <option value="Account Inquiry">ðŸ‘¤ Account / Permissions Inquiry</option>
+            <option value="General Support">ðŸ’¬ General Support / Feedback</option>
           </select>
         </div>
 
@@ -664,7 +664,7 @@
           <select id="ticket-priority" class="form-select">
             <option value="normal">Normal</option>
             <option value="high">High</option>
-            <option value="urgent">🔥 Urgent</option>
+            <option value="urgent">ðŸ”¥ Urgent</option>
           </select>
         </div>
 
@@ -688,10 +688,9 @@
     </div>
   </div>
 
-  <!-- Floating Quick Support Widget -->
-  <button type="button" class="floating-support-btn" id="floating-support-btn" title="Open Support &amp; Inbox">
+  <!-- Floating Support Quick Trigger Button -->
+  <button type="button" class="floating-support-btn" id="floating-support-btn" title="Open Support &amp; Inbox" aria-label="Open Support and Inbox">
     <i class="fa-solid fa-headset"></i>
-    <span class="floating-label">Support</span>
     <span class="badge-count hidden" id="floating-unread-badge">0</span>
   </button>
 
